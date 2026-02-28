@@ -6,3 +6,13 @@
 *.ts text eol=lf
 *.yml text eol=lf
 package-lock.json text eol=lf merge=ours
+
+.github export-ignore
+.editorconfig export-ignore
+.gitattributes export-ignore
+.gitignore export-ignore
+.prettierignore export-ignore
+.prettierrc export-ignore
+eslint.config.js export-ignore
+package-lock.json export-ignore
+tsconfig.json export-ignore
