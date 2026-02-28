@@ -1,0 +1,35 @@
+{
+  "name": "pgmmv-types",
+  "version": "0.1.0",
+  "description": "TypeScript definitions for PGMMV.",
+  "license": "MIT",
+  "author": "kidthales <kidthales@agogpixel.com>",
+  "main": "lib/index.ts",
+  "types": "pgmmv.d.ts",
+  "files": [
+    "lib",
+    "pgmmv.d.ts"
+  ],
+  "scripts": {
+    "lint": "concurrently --group --names eslint,prettier \"eslint --cache .\" \"prettier --check \\\"**/*.{html,css,scss,md,json,yaml,yml}\\\"\"",
+    "lint-fix": "concurrently --group --names eslint,prettier \"eslint --cache --fix .\" \"prettier --write \\\"**/*.{html,css,scss,md,json,yaml,yml}\\\"\""
+  },
+  "dependencies": {
+    "type-fest": "^5.4.4"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.3.4",
+    "@types/node": "^25.3.2",
+    "@typescript-eslint/eslint-plugin": "^8.56.1",
+    "@typescript-eslint/parser": "^8.56.1",
+    "concurrently": "^9.2.1",
+    "eslint": "^10.0.2",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.5",
+    "prettier": "^3.8.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kidthales/pgmmv-types.git"
+  }
+}
