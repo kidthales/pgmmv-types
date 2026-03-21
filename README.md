@@ -1,4 +1,4 @@
-# pgmmv-types
+# PGMMV Types
 
 [![CI](https://github.com/kidthales/pgmmv-types/actions/workflows/ci.yml/badge.svg)](https://github.com/kidthales/pgmmv-types/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
