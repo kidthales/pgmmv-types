@@ -23,8 +23,7 @@ export type AgtkScrollMessageShowBackgroundType =
  * @internal
  */
 export type AgtkScrollMessageShowTemplateId =
-  | AgtkScrollMessageShowConstant['TemplateBlack']
-  | AgtkScrollMessageShowConstant['TemplateWhite'];
+  AgtkScrollMessageShowConstant['TemplateBlack'] | AgtkScrollMessageShowConstant['TemplateWhite'];
 
 /**
  * Agtk scroll message show position type type.

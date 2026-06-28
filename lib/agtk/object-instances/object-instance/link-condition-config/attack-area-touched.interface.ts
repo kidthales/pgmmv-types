@@ -13,8 +13,7 @@ import type { AgtkAttackAttributesValue as AgtkAttributePresetId } from '../../.
  * @internal
  */
 export type AgtkAttackAreaTouchedObjectType =
-  | AgtkAttackAreaTouchedConstant['SetByObjectGroup']
-  | AgtkAttackAreaTouchedConstant['SetByObjectId'];
+  AgtkAttackAreaTouchedConstant['SetByObjectGroup'] | AgtkAttackAreaTouchedConstant['SetByObjectId'];
 
 /**
  * Agtk attack area touched attribute type type.

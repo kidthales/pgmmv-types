@@ -26,9 +26,7 @@ export type AgtkObjectLockCompareVariableOperator =
  * @internal
  */
 export type AgtkObjectLockCompareValueType =
-  | AgtkConditions['CompareValue']
-  | AgtkConditions['CompareVariable']
-  | AgtkConditions['CompareNaN'];
+  AgtkConditions['CompareValue'] | AgtkConditions['CompareVariable'] | AgtkConditions['CompareNaN'];
 
 /**
  * Agtk object lock switch condition type.
@@ -47,9 +45,7 @@ export type AgtkObjectLockSwitchCondition =
  * @internal
  */
 export type AgtkObjectLockUseType =
-  | AgtkObjectLockConstant['UseSwitch']
-  | AgtkObjectLockConstant['UseVariable']
-  | AgtkObjectLockConstant['UseNone'];
+  AgtkObjectLockConstant['UseSwitch'] | AgtkObjectLockConstant['UseVariable'] | AgtkObjectLockConstant['UseNone'];
 
 /**
  * Agtk object instance object lock action command configuration interface.

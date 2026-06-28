@@ -37,9 +37,7 @@ export type AgtkSwitchVariableChangedCompareVariableOperator =
  * @internal
  */
 export type AgtkSwitchVariableChangedCompareValueType =
-  | AgtkConditions['CompareValue']
-  | AgtkConditions['CompareVariable']
-  | AgtkConditions['CompareNaN'];
+  AgtkConditions['CompareValue'] | AgtkConditions['CompareVariable'] | AgtkConditions['CompareNaN'];
 
 /**
  * Agtk object instance switch/variable changed link condition configuration

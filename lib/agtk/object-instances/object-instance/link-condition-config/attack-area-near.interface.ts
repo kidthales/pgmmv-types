@@ -23,8 +23,7 @@ export type AgtkAttackAreaNearDistanceType =
  * @internal
  */
 export type AgtkAttackAreaNearObjectType =
-  | AgtkAttackAreaNearConstant['SetByObjectGroup']
-  | AgtkAttackAreaNearConstant['SetByObjectId'];
+  AgtkAttackAreaNearConstant['SetByObjectGroup'] | AgtkAttackAreaNearConstant['SetByObjectId'];
 
 /**
  * Attack area near attribute type type.

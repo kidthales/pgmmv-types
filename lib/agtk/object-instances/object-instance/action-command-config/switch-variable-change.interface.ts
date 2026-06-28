@@ -13,9 +13,7 @@ import type { AgtkQualifierValue as AgtkQualifierId } from '../../../constants/q
  * @internal
  */
 export type AgtkSwitchVariableChangeSwitchValue =
-  | AgtkAssignments['SwitchAssignOn']
-  | AgtkAssignments['SwitchAssignOff']
-  | AgtkAssignments['SwitchAssignToggle'];
+  AgtkAssignments['SwitchAssignOn'] | AgtkAssignments['SwitchAssignOff'] | AgtkAssignments['SwitchAssignToggle'];
 
 /**
  * Agtk switch/variable change variable assignment operator type.

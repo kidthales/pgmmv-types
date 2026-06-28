@@ -13,8 +13,7 @@ import type { AgtkQualifierValue as AgtkTargetQualifierId } from '../../../const
  * @internal
  */
 export type AgtkObjectPushPullDirectionType =
-  | AgtkObjectPushPullConstant['DirectionAngle']
-  | AgtkObjectPushPullConstant['DirectionObjectDisp'];
+  AgtkObjectPushPullConstant['DirectionAngle'] | AgtkObjectPushPullConstant['DirectionObjectDisp'];
 
 /**
  * Agtk object push/pull effect direction type type.

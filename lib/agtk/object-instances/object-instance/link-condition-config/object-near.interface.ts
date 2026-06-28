@@ -22,8 +22,7 @@ export type AgtkObjectNearDistanceType =
  * @internal
  */
 export type AgtkObjectNearObjectType =
-  | AgtkObjectNearConstant['SetByObjectGroup']
-  | AgtkObjectNearConstant['SetByObjectId'];
+  AgtkObjectNearConstant['SetByObjectGroup'] | AgtkObjectNearConstant['SetByObjectId'];
 
 /**
  * Agtk object instance object near link condition configuration interface.
