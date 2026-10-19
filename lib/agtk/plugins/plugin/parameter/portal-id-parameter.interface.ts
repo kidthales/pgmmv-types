@@ -10,5 +10,5 @@ import type { AgtkParameterType } from './parameter-type.enum';
  * Agtk plugin portal ID UI parameter interface.
  */
 export interface AgtkPortalIdParameter extends AgtkBaseResourceIdParameter {
-  type: AgtkParameterType.PortalId;
+  type: AgtkParameterType.PortalId | `${AgtkParameterType.PortalId}`;
 }

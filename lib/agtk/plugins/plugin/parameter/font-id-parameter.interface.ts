@@ -10,5 +10,5 @@ import type { AgtkParameterType } from './parameter-type.enum';
  * Agtk plugin font ID UI parameter interface.
  */
 export interface AgtkFontIdParameter extends AgtkBaseResourceIdParameter {
-  type: AgtkParameterType.FontId;
+  type: AgtkParameterType.FontId | `${AgtkParameterType.FontId}`;
 }

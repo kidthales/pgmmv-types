@@ -12,7 +12,7 @@ export interface AgtkAnimations {
   /**
    *
    */
-  getIdList(): number;
+  getIdList(): number[];
 
   /**
    *

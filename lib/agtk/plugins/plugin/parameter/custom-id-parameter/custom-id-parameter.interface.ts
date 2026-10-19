@@ -12,7 +12,7 @@ import type { AgtkCustomIdParameterParameter } from './custom-id-parameter-param
  * Agtk plugin custom ID UI parameter interface.
  */
 export interface AgtkCustomIdParameter extends AgtkBaseParameter {
-  type: AgtkParameterType.CustomId;
+  type: AgtkParameterType.CustomId | `${AgtkParameterType.CustomId}`;
   customParam: AgtkCustomIdParameterParameter[];
   defaultValue: number;
 }

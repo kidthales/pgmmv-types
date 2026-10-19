@@ -10,5 +10,5 @@ import type { AgtkParameterType } from './parameter-type.enum';
  * Agtk plugin scene ID UI parameter interface.
  */
 export interface AgtkSceneIdParameter extends AgtkBaseResourceIdParameter {
-  type: AgtkParameterType.SceneId;
+  type: AgtkParameterType.SceneId | `${AgtkParameterType.SceneId}`;
 }

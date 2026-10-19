@@ -12,6 +12,6 @@ import type { AgtkParameterType } from './parameter-type.enum';
  * Agtk plugin JSON UI parameter interface.
  */
 export interface AgtkJsonParameter extends AgtkBaseParameter {
-  type: AgtkParameterType.Json;
+  type: AgtkParameterType.Json | `${AgtkParameterType.Json}`;
   defaultValue: JsonValue;
 }

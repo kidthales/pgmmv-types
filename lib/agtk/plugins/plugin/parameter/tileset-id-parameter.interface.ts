@@ -10,5 +10,5 @@ import type { AgtkParameterType } from './parameter-type.enum';
  * Agtk plugin tileset ID UI parameter interface.
  */
 export interface AgtkTilesetIdParameter extends AgtkBaseResourceIdParameter {
-  type: AgtkParameterType.TilesetId;
+  type: AgtkParameterType.TilesetId | `${AgtkParameterType.TilesetId}`;
 }
