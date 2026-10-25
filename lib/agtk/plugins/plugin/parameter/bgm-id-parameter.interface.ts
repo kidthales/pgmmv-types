@@ -10,5 +10,5 @@ import type { AgtkParameterType } from './parameter-type.enum';
  * Agtk plugin background music ID UI parameter interface.
  */
 export interface AgtkBgmIdParameter extends AgtkBaseResourceIdParameter {
-  type: AgtkParameterType.BgmId;
+  type: AgtkParameterType.BgmId | `${AgtkParameterType.BgmId}`;
 }

@@ -10,5 +10,5 @@ import type { AgtkParameterType } from './parameter-type.enum';
  * Agtk plugin embedded UI parameter interface.
  */
 export interface AgtkEmbeddedParameter extends AgtkBaseEmbeddedParameter {
-  type: AgtkParameterType.Embedded;
+  type: AgtkParameterType.Embedded | `${AgtkParameterType.Embedded}`;
 }

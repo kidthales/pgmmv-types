@@ -10,5 +10,5 @@ import type { AgtkParameterType } from './parameter-type.enum';
  * Agtk plugin variable ID UI parameter interface.
  */
 export interface AgtkVariableIdParameter extends AgtkBaseSwitchOrVariableIdParameter {
-  type: AgtkParameterType.VariableId;
+  type: AgtkParameterType.VariableId | `${AgtkParameterType.VariableId}`;
 }

@@ -12,7 +12,7 @@ export interface AgtkTexts {
   /**
    *
    */
-  getIdList(): number;
+  getIdList(): number[];
 
   /**
    *

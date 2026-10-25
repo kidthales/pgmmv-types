@@ -10,6 +10,6 @@ import type { AgtkParameterType } from './parameter-type.enum';
  * Agtk plugin embedded editable UI parameter interface.
  */
 export interface AgtkEmbeddedEditableParameter extends AgtkBaseEmbeddedParameter {
-  type: AgtkParameterType.EmbeddedEditable;
+  type: AgtkParameterType.EmbeddedEditable | `${AgtkParameterType.EmbeddedEditable}`;
   reference: 'fontId' | 'text';
 }

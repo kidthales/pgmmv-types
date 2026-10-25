@@ -32,5 +32,5 @@ export interface AgtkDatabases {
    *
    * null if not foun
    */
-  getIdList(): number | null;
+  getIdList(): number[] | null;
 }

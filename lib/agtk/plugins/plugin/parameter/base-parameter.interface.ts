@@ -25,7 +25,7 @@ export interface AgtkBaseParameter {
   /**
    * Parameter type.
    */
-  type: AgtkParameterType;
+  type: AgtkParameterType | `${AgtkParameterType}`;
 
   /**
    * Parameter default value.

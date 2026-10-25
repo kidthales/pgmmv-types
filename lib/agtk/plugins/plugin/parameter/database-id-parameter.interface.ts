@@ -10,5 +10,5 @@ import type { AgtkParameterType } from './parameter-type.enum';
  * Agtk plugin database ID UI parameter interface.
  */
 export interface AgtkDatabaseIdParameter extends AgtkBaseResourceIdParameter {
-  type: AgtkParameterType.DatabaseId;
+  type: AgtkParameterType.DatabaseId | `${AgtkParameterType.DatabaseId}`;
 }

@@ -10,6 +10,10 @@ import type { AgtkParameterType } from './parameter-type.enum';
  * Agtk plugin base string UI parameter interface.
  */
 export interface AgtkBaseStringParameter extends AgtkBaseParameter {
-  type: AgtkParameterType.String | AgtkParameterType.MultiLineString;
+  type:
+    | AgtkParameterType.String
+    | `${AgtkParameterType.String}`
+    | AgtkParameterType.MultiLineString
+    | `${AgtkParameterType.MultiLineString}`;
   defaultValue: string;
 }

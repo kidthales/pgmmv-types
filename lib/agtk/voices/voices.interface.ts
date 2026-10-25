@@ -12,7 +12,7 @@ export interface AgtkVoices {
   /**
    *
    */
-  getIdList(): number;
+  getIdList(): number[];
 
   /**
    *

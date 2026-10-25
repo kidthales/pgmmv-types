@@ -10,5 +10,5 @@ import type { AgtkParameterType } from './parameter-type.enum';
  * Agtk plugin animation ID UI parameter interface.
  */
 export interface AgtkAnimationIdParameter extends AgtkBaseResourceIdParameter {
-  type: AgtkParameterType.AnimationId;
+  type: AgtkParameterType.AnimationId | `${AgtkParameterType.AnimationId}`;
 }

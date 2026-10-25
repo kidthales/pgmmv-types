@@ -128,3 +128,8 @@ export enum AgtkParameterType {
    */
   DatabaseId = 'DatabaseId'
 }
+
+/**
+ * Agtk plugin UI parameter type value.
+ */
+export type AgtkParameterTypeValue = AgtkParameterType | `${AgtkParameterType}`;

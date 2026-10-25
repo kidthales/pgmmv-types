@@ -10,5 +10,5 @@ import type { AgtkParameterType } from './parameter-type.enum';
  * Agtk plugin movie ID UI parameter interface.
  */
 export interface AgtkMovieIdParameter extends AgtkBaseResourceIdParameter {
-  type: AgtkParameterType.MovieId;
+  type: AgtkParameterType.MovieId | `${AgtkParameterType.MovieId}`;
 }
