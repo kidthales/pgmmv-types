@@ -72,5 +72,5 @@ export interface AgtkDatabase {
    * @param arg1 Column number
    * @param arg2 Row number
    */
-  getFieldByIndex(arg1: number, arg2: number): string;
+  getFieldByIndex(arg1: number, arg2: number): string | null;
 }

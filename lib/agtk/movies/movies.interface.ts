@@ -12,7 +12,7 @@ export interface AgtkMovies {
   /**
    *
    */
-  getIdList(): number;
+  getIdList(): number[];
 
   /**
    *

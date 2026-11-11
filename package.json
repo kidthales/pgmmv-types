@@ -1,6 +1,6 @@
 {
   "name": "@kidthales/pgmmv-types",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "TypeScript definitions for PGMMV.",
   "license": "MIT",
   "author": "kidthales <kidthales@agogpixel.com>",
@@ -11,7 +11,7 @@
     "pgmmv.d.ts"
   ],
   "scripts": {
-    "lint": "concurrently --group --names eslint,prettier \"eslint --cache .\" \"prettier --check \\\"**/*.{html,css,scss,md,json,yaml,yml}\\\"\"",
+    "lint": "concurrently --group --names tsc,eslint,prettier \"tsc --noEmit\" \"eslint --cache .\" \"prettier --check \\\"**/*.{html,css,scss,md,json,yaml,yml}\\\"\"",
     "lint-fix": "concurrently --group --names eslint,prettier \"eslint --cache --fix .\" \"prettier --write \\\"**/*.{html,css,scss,md,json,yaml,yml}\\\"\""
   },
   "dependencies": {
@@ -19,14 +19,14 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.4",
-    "@types/node": "^24.0.0",
     "@typescript-eslint/eslint-plugin": "^8.56.1",
     "@typescript-eslint/parser": "^8.56.1",
     "concurrently": "^10.0.0",
     "eslint": "^10.0.2",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.5",
-    "prettier": "^3.8.1"
+    "prettier": "^3.8.1",
+    "typescript": "^6.0.3"
   },
   "repository": {
     "type": "git",

@@ -21,7 +21,7 @@ export interface AgtkPlugin<I extends JsonValue = JsonValue> {
   /**
    * Set by PGMMV engine when plugin is first initialized.
    */
-  readonly id: number;
+  readonly id?: number;
 
   /**
    * Sets the locale in which to run the plug-in.
@@ -46,19 +46,19 @@ export interface AgtkPlugin<I extends JsonValue = JsonValue> {
    *  - autoTile: Defines auto-tile parameters.
    * @returns Category information.
    */
-  getInfo: <C extends AgtkPluginInfoCategory>(
+  getInfo: <C extends AgtkPluginInfoCategory | `${AgtkPluginInfoCategory}`>(
     category: C
-  ) => C extends AgtkPluginInfoCategory.Parameter
+  ) => C extends AgtkPluginInfoCategory.Parameter | `${AgtkPluginInfoCategory.Parameter}`
     ? AgtkParameter[]
-    : C extends AgtkPluginInfoCategory.Internal
+    : C extends AgtkPluginInfoCategory.Internal | `${AgtkPluginInfoCategory.Internal}`
       ? I
-      : C extends AgtkPluginInfoCategory.ActionCommand
+      : C extends AgtkPluginInfoCategory.ActionCommand | `${AgtkPluginInfoCategory.ActionCommand}`
         ? AgtkActionCommand[]
-        : C extends AgtkPluginInfoCategory.LinkCondition
+        : C extends AgtkPluginInfoCategory.LinkCondition | `${AgtkPluginInfoCategory.LinkCondition}`
           ? AgtkLinkCondition[]
-          : C extends AgtkPluginInfoCategory.AutoTile
+          : C extends AgtkPluginInfoCategory.AutoTile | `${AgtkPluginInfoCategory.AutoTile}`
             ? AgtkAutoTileParameters
-            : string;
+            : string | undefined;
 
   /**
    * Initializes plug-in.
@@ -84,9 +84,23 @@ export interface AgtkPlugin<I extends JsonValue = JsonValue> {
   /**
    * Calls various functions.
    *
-   * @todo
+   * Called from the system for auto-tile plug-ins to query tile counts, tile lists,
+   * attributes, update areas, and handle parameter changes.
    */
-  call: (...args: unknown[]) => unknown;
+  call: {
+    (paramValue: unknown, command: 'getHorzCount'): number;
+    (paramValue: unknown, command: 'getVertCount'): number;
+    (paramValue: unknown, command: 'getFrontTileList'): unknown[];
+    (paramValue: unknown, command: 'getBackTileList'): unknown[];
+    (paramValue: unknown, command: 'getAttributeList'): string[];
+    (
+      paramValue: unknown,
+      command: 'updateArea',
+      area: [tileStartX: number, tileStartY: number, horzTileCount: number, vertTileCount: number]
+    ): void;
+    (paramValue: unknown, command: 'onParamChanged', prevValue: unknown): void;
+    (paramValue?: unknown, command?: string, ...args: unknown[]): unknown;
+  };
 
   /**
    * Calls update process.
@@ -168,18 +182,24 @@ export interface AgtkPlugin<I extends JsonValue = JsonValue> {
   /**
    * Returns attribute of specified tile coordinates.
    *
-   * @todo
+   * @param paramValue Auto-tile parameter setting value.
+   * @param tileX Tile X coordinate.
+   * @param tileY Tile Y coordinate.
+   * @returns Attribute string.
    * @note Used for switching tiles used in this auto-tile using the attribute
    * set by other auto-tile plug-ins.
    */
-  getAttribute?: (...args: unknown[]) => unknown;
+  getAttribute?: (paramValue: unknown, tileX: number, tileY: number) => string;
 
   /**
    * Returns border information for specified tile coordinates.
    *
-   * @todo
+   * @param autoTileInfo Auto-tile information.
+   * @param tileX Tile X coordinate.
+   * @param tileY Tile Y coordinate.
+   * @returns Border string.
    * @note Used for switching tiles used in this auto-tile using the border
    * information set by other auto-tile plug-ins.
    */
-  getBorderType?: (...args: unknown[]) => unknown;
+  getBorderType?: (autoTileInfo: unknown, tileX: number, tileY: number) => string;
 }

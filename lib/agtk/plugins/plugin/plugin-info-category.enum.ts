@@ -53,3 +53,8 @@ export enum AgtkPluginInfoCategory {
    */
   AutoTile = 'autoTile'
 }
+
+/**
+ * Agtk plugin info category value type.
+ */
+export type AgtkPluginInfoCategoryValue = AgtkPluginInfoCategory | `${AgtkPluginInfoCategory}`;

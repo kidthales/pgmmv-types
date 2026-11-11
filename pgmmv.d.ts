@@ -15,4 +15,11 @@ declare global {
    * Cocos JSB namespace.
    */
   const jsb: jsb;
+
+  /**
+   * Window interface augmentation for kidthales plugins.
+   */
+  interface Window {
+    kt: any;
+  }
 }

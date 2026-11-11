@@ -9,12 +9,12 @@
  */
 export interface AgtkUi {
   /**
-   *
+   * Edit scene ID.
    */
-  editSceneId: unknown;
+  editSceneId: number;
 
   /**
-   *
+   * Edit layer index.
    */
-  editLayerIndex: unknown;
+  editLayerIndex: number;
 }
