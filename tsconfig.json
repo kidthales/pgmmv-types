@@ -2,9 +2,10 @@
   "compilerOptions": {
     "target": "es2020",
     "lib": ["es2020", "dom"],
-    "module": "commonjs",
-    "moduleResolution": "node",
-    "strict": true,
-    "ignoreDeprecations": "6.0"
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "allowJs": true,
+    "noEmit": true,
+    "strict": true
   }
 }
