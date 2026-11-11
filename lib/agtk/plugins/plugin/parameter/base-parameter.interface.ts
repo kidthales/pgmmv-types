@@ -4,7 +4,7 @@
  * @packageDocumentation
  * @internal
  */
-import type { AgtkParameterType } from './parameter-type.enum';
+import type { AgtkParameterTypeValue } from './parameter-type.enum';
 
 /**
  * Agtk plugin base UI parameter interface.
@@ -25,7 +25,7 @@ export interface AgtkBaseParameter {
   /**
    * Parameter type.
    */
-  type: AgtkParameterType;
+  type: AgtkParameterTypeValue;
 
   /**
    * Parameter default value.

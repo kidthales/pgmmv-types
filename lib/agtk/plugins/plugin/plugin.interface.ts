@@ -8,11 +8,26 @@ import type { JsonValue } from 'type-fest';
 import type { AgtkCommandBehaviorValue as AgtkCommandBehavior } from '../../constants/action-commands/command-behavior';
 
 import type { AgtkActionCommand } from './action-command.interface';
-import type { AgtkAutoTileParameters } from './auto-tile-parameters.interface';
+import type { AgtkAutoTileCommand, AgtkAutoTileParameters } from './auto-tile-parameters.interface';
 import type { AgtkLinkCondition } from './link-condition.interface';
 import type { AgtkParameterValue } from './parameter-value.interface';
 import type { AgtkParameter } from './parameter';
-import type { AgtkPluginInfoCategory } from './plugin-info-category.enum';
+import type { AgtkPluginInfoCategory, AgtkPluginInfoCategoryValue } from './plugin-info-category.enum';
+
+/**
+ * Mapping of plug-in info categories to their expected return types.
+ */
+export interface AgtkPluginInfoMap<I extends JsonValue = JsonValue> {
+  [AgtkPluginInfoCategory.Name]: string;
+  [AgtkPluginInfoCategory.Description]: string;
+  [AgtkPluginInfoCategory.Author]: string;
+  [AgtkPluginInfoCategory.Help]: string;
+  [AgtkPluginInfoCategory.Parameter]: AgtkParameter[];
+  [AgtkPluginInfoCategory.Internal]: I;
+  [AgtkPluginInfoCategory.ActionCommand]: AgtkActionCommand[];
+  [AgtkPluginInfoCategory.LinkCondition]: AgtkLinkCondition[];
+  [AgtkPluginInfoCategory.AutoTile]: AgtkAutoTileParameters;
+}
 
 /**
  * Agtk plugin interface.
@@ -21,7 +36,7 @@ export interface AgtkPlugin<I extends JsonValue = JsonValue> {
   /**
    * Set by PGMMV engine when plugin is first initialized.
    */
-  readonly id: number;
+  readonly id?: number;
 
   /**
    * Sets the locale in which to run the plug-in.
@@ -46,19 +61,7 @@ export interface AgtkPlugin<I extends JsonValue = JsonValue> {
    *  - autoTile: Defines auto-tile parameters.
    * @returns Category information.
    */
-  getInfo: <C extends AgtkPluginInfoCategory>(
-    category: C
-  ) => C extends AgtkPluginInfoCategory.Parameter
-    ? AgtkParameter[]
-    : C extends AgtkPluginInfoCategory.Internal
-      ? I
-      : C extends AgtkPluginInfoCategory.ActionCommand
-        ? AgtkActionCommand[]
-        : C extends AgtkPluginInfoCategory.LinkCondition
-          ? AgtkLinkCondition[]
-          : C extends AgtkPluginInfoCategory.AutoTile
-            ? AgtkAutoTileParameters
-            : string;
+  getInfo: (category: AgtkPluginInfoCategoryValue) => AgtkPluginInfoMap<I>[AgtkPluginInfoCategory] | undefined;
 
   /**
    * Initializes plug-in.
@@ -84,9 +87,12 @@ export interface AgtkPlugin<I extends JsonValue = JsonValue> {
   /**
    * Calls various functions.
    *
-   * @todo
+   * Called from the system for auto-tile plug-ins to query tile counts, tile lists,
+   * attributes, update areas, and handle parameter changes. See `AgtkAutoTileCallMap`
+   * for per-command return types (`getHorzCount`, `getVertCount`, `getFrontTileList`,
+   * `getBackTileList`, `getAttributeList`, `updateArea`, `onParamChanged`).
    */
-  call: (...args: unknown[]) => unknown;
+  call: (paramValue?: AgtkParameterValue[], command?: AgtkAutoTileCommand | string, ...args: unknown[]) => unknown;
 
   /**
    * Calls update process.
@@ -168,18 +174,24 @@ export interface AgtkPlugin<I extends JsonValue = JsonValue> {
   /**
    * Returns attribute of specified tile coordinates.
    *
-   * @todo
+   * @param paramValue Auto-tile parameter setting value.
+   * @param tileX Tile X coordinate.
+   * @param tileY Tile Y coordinate.
+   * @returns Attribute string.
    * @note Used for switching tiles used in this auto-tile using the attribute
    * set by other auto-tile plug-ins.
    */
-  getAttribute?: (...args: unknown[]) => unknown;
+  getAttribute?: (paramValue: AgtkParameterValue[], tileX: number, tileY: number) => string;
 
   /**
    * Returns border information for specified tile coordinates.
    *
-   * @todo
+   * @param autoTileInfo Auto-tile information.
+   * @param tileX Tile X coordinate.
+   * @param tileY Tile Y coordinate.
+   * @returns Border string.
    * @note Used for switching tiles used in this auto-tile using the border
    * information set by other auto-tile plug-ins.
    */
-  getBorderType?: (...args: unknown[]) => unknown;
+  getBorderType?: (autoTileInfo: unknown, tileX: number, tileY: number) => string;
 }

@@ -11,6 +11,11 @@ import type { AgtkObject } from './object';
 export interface AgtkObjects {
   /**
    *
+   */
+  getIdList(): number[];
+
+  /**
+   *
    * @param arg
    */
   getIdByName(arg: string): number;

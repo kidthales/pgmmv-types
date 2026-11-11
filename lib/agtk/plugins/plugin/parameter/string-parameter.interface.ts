@@ -10,5 +10,5 @@ import type { AgtkParameterType } from './parameter-type.enum';
  * Agtk plugin string UI parameter interface.
  */
 export interface AgtkStringParameter extends AgtkBaseStringParameter {
-  type: AgtkParameterType.String;
+  type: AgtkParameterType.String | `${AgtkParameterType.String}`;
 }

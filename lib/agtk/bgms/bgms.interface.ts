@@ -12,7 +12,7 @@ export interface AgtkBGMS {
   /**
    *
    */
-  getIdList(): number;
+  getIdList(): number[];
 
   /**
    *

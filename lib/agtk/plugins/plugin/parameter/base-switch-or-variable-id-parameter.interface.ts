@@ -10,7 +10,11 @@ import type { AgtkParameterType } from './parameter-type.enum';
  * Agtk plugin base switch or variable ID UI parameter interface.
  */
 export interface AgtkBaseSwitchOrVariableIdParameter extends AgtkBaseResourceIdParameter {
-  type: AgtkParameterType.SwitchId | AgtkParameterType.VariableId;
-  referenceId: string;
+  type:
+    | AgtkParameterType.SwitchId
+    | `${AgtkParameterType.SwitchId}`
+    | AgtkParameterType.VariableId
+    | `${AgtkParameterType.VariableId}`;
+  referenceId?: number | string;
   withNewButton?: boolean;
 }

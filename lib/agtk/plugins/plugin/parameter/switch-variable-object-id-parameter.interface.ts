@@ -10,6 +10,6 @@ import type { AgtkParameterType } from './parameter-type.enum';
  * Agtk plugin switch/variable object ID UI parameter interface.
  */
 export interface AgtkSwitchVariableObjectIdParameter extends AgtkBaseResourceIdParameter {
-  type: AgtkParameterType.SwitchVariableObjectId;
+  type: AgtkParameterType.SwitchVariableObjectId | `${AgtkParameterType.SwitchVariableObjectId}`;
   option: ('SelfObject' | 'LockedObject' | 'ParentObject')[];
 }

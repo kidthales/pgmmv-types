@@ -12,7 +12,7 @@ export interface AgtkSES {
   /**
    *
    */
-  getIdList(): number;
+  getIdList(): number[];
 
   /**
    *
