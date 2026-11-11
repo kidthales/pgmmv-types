@@ -72,6 +72,7 @@
           fontIds = Agtk.fonts.getIdList(),
           imageIds = Agtk.images.getIdList(),
           movieIds = Agtk.movies.getIdList(),
+          objectIds = Agtk.objects.getIdList(),
           sceneIds = Agtk.scenes.getIdList(),
           seIds = Agtk.ses.getIdList(),
           textIds = Agtk.texts.getIdList(),
@@ -102,6 +103,7 @@
               fontIds.length +
               imageIds.length +
               movieIds.length +
+              objectIds.length +
               sceneIds.length +
               seIds.length +
               textIds.length +
@@ -135,7 +137,62 @@
       execLinkCondition: function () {
         return false;
       }
+    },
+    /** @type {import('../lib/agtk/plugins/plugin').AgtkPlugin} */
+    autoTilePlugin = {
+      setLocale: function () {},
+
+      getInfo: function (category) {
+        switch (category) {
+          case 'name':
+            return 'PGMMV AutoTile Fixture';
+          case 'autoTile':
+            return [
+              {
+                id: 1,
+                name: 'Horz Count',
+                type: 'Number',
+                defaultValue: 4
+              }
+            ];
+          default:
+            break;
+        }
+      },
+
+      initialize: function () {},
+
+      finalize: function () {},
+
+      setParamValue: function () {},
+
+      setInternal: function () {},
+
+      call: function (paramValue, command) {
+        if (command === 'getHorzCount' || command === 'getVertCount') {
+          return paramValue && paramValue.length ? 4 : 2;
+        }
+        if (command === 'getFrontTileList' || command === 'getBackTileList') {
+          return [];
+        }
+        if (command === 'getAttributeList') {
+          return ['ground'];
+        }
+        return null;
+      },
+
+      getAttribute: function (paramValue, tileX, tileY) {
+        return String((paramValue ? paramValue.length : 0) + tileX + tileY);
+      },
+
+      getBorderType: function (autoTileInfo, tileX, tileY) {
+        return String(Boolean(autoTileInfo)) + ':' + String(tileX + tileY);
+      }
     };
+
+  if (autoTilePlugin.call([], 'getHorzCount') === 0) {
+    Agtk.log('AutoTile check');
+  }
 
   return plugin;
 })();

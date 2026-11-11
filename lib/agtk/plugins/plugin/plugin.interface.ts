@@ -8,11 +8,26 @@ import type { JsonValue } from 'type-fest';
 import type { AgtkCommandBehaviorValue as AgtkCommandBehavior } from '../../constants/action-commands/command-behavior';
 
 import type { AgtkActionCommand } from './action-command.interface';
-import type { AgtkAutoTileParameters } from './auto-tile-parameters.interface';
+import type { AgtkAutoTileCommand, AgtkAutoTileParameters } from './auto-tile-parameters.interface';
 import type { AgtkLinkCondition } from './link-condition.interface';
 import type { AgtkParameterValue } from './parameter-value.interface';
 import type { AgtkParameter } from './parameter';
-import type { AgtkPluginInfoCategory } from './plugin-info-category.enum';
+import type { AgtkPluginInfoCategory, AgtkPluginInfoCategoryValue } from './plugin-info-category.enum';
+
+/**
+ * Mapping of plug-in info categories to their expected return types.
+ */
+export interface AgtkPluginInfoMap<I extends JsonValue = JsonValue> {
+  [AgtkPluginInfoCategory.Name]: string;
+  [AgtkPluginInfoCategory.Description]: string;
+  [AgtkPluginInfoCategory.Author]: string;
+  [AgtkPluginInfoCategory.Help]: string;
+  [AgtkPluginInfoCategory.Parameter]: AgtkParameter[];
+  [AgtkPluginInfoCategory.Internal]: I;
+  [AgtkPluginInfoCategory.ActionCommand]: AgtkActionCommand[];
+  [AgtkPluginInfoCategory.LinkCondition]: AgtkLinkCondition[];
+  [AgtkPluginInfoCategory.AutoTile]: AgtkAutoTileParameters;
+}
 
 /**
  * Agtk plugin interface.
@@ -46,9 +61,7 @@ export interface AgtkPlugin<I extends JsonValue = JsonValue> {
    *  - autoTile: Defines auto-tile parameters.
    * @returns Category information.
    */
-  getInfo: (
-    category: AgtkPluginInfoCategory | `${AgtkPluginInfoCategory}`
-  ) => AgtkParameter[] | I | AgtkActionCommand[] | AgtkLinkCondition[] | AgtkAutoTileParameters | string | undefined;
+  getInfo: (category: AgtkPluginInfoCategoryValue) => AgtkPluginInfoMap<I>[AgtkPluginInfoCategory] | undefined;
 
   /**
    * Initializes plug-in.
@@ -75,24 +88,11 @@ export interface AgtkPlugin<I extends JsonValue = JsonValue> {
    * Calls various functions.
    *
    * Called from the system for auto-tile plug-ins to query tile counts, tile lists,
-   * attributes, update areas, and handle parameter changes.
+   * attributes, update areas, and handle parameter changes. See `AgtkAutoTileCallMap`
+   * for per-command return types (`getHorzCount`, `getVertCount`, `getFrontTileList`,
+   * `getBackTileList`, `getAttributeList`, `updateArea`, `onParamChanged`).
    */
-  call:
-    | (() => void)
-    | {
-        (paramValue: unknown, command: 'getHorzCount'): number;
-        (paramValue: unknown, command: 'getVertCount'): number;
-        (paramValue: unknown, command: 'getFrontTileList'): unknown[];
-        (paramValue: unknown, command: 'getBackTileList'): unknown[];
-        (paramValue: unknown, command: 'getAttributeList'): string[];
-        (
-          paramValue: unknown,
-          command: 'updateArea',
-          area: [tileStartX: number, tileStartY: number, horzTileCount: number, vertTileCount: number]
-        ): void;
-        (paramValue: unknown, command: 'onParamChanged', prevValue: unknown): void;
-        (paramValue?: unknown, command?: string, ...args: unknown[]): unknown;
-      };
+  call: (paramValue?: AgtkParameterValue[], command?: AgtkAutoTileCommand | string, ...args: unknown[]) => unknown;
 
   /**
    * Calls update process.
@@ -181,7 +181,7 @@ export interface AgtkPlugin<I extends JsonValue = JsonValue> {
    * @note Used for switching tiles used in this auto-tile using the attribute
    * set by other auto-tile plug-ins.
    */
-  getAttribute?: (paramValue: unknown, tileX: number, tileY: number) => string;
+  getAttribute?: (paramValue: AgtkParameterValue[], tileX: number, tileY: number) => string;
 
   /**
    * Returns border information for specified tile coordinates.
