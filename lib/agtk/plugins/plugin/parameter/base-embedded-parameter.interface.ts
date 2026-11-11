@@ -15,7 +15,7 @@ export interface AgtkBaseEmbeddedParameter extends AgtkBaseParameter {
     | `${AgtkParameterType.Embedded}`
     | AgtkParameterType.EmbeddedEditable
     | `${AgtkParameterType.EmbeddedEditable}`;
-  sourceId: number;
+  sourceId?: number | string;
   reference?: 'fontId' | 'text';
   width?: number;
   height?: number;

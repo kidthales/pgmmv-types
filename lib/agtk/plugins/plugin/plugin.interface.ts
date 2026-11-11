@@ -46,19 +46,9 @@ export interface AgtkPlugin<I extends JsonValue = JsonValue> {
    *  - autoTile: Defines auto-tile parameters.
    * @returns Category information.
    */
-  getInfo: <C extends AgtkPluginInfoCategory | `${AgtkPluginInfoCategory}`>(
-    category: C
-  ) => C extends AgtkPluginInfoCategory.Parameter | `${AgtkPluginInfoCategory.Parameter}`
-    ? AgtkParameter[]
-    : C extends AgtkPluginInfoCategory.Internal | `${AgtkPluginInfoCategory.Internal}`
-      ? I
-      : C extends AgtkPluginInfoCategory.ActionCommand | `${AgtkPluginInfoCategory.ActionCommand}`
-        ? AgtkActionCommand[]
-        : C extends AgtkPluginInfoCategory.LinkCondition | `${AgtkPluginInfoCategory.LinkCondition}`
-          ? AgtkLinkCondition[]
-          : C extends AgtkPluginInfoCategory.AutoTile | `${AgtkPluginInfoCategory.AutoTile}`
-            ? AgtkAutoTileParameters
-            : string | undefined;
+  getInfo: (
+    category: AgtkPluginInfoCategory | `${AgtkPluginInfoCategory}`
+  ) => AgtkParameter[] | I | AgtkActionCommand[] | AgtkLinkCondition[] | AgtkAutoTileParameters | string | undefined;
 
   /**
    * Initializes plug-in.
@@ -87,20 +77,22 @@ export interface AgtkPlugin<I extends JsonValue = JsonValue> {
    * Called from the system for auto-tile plug-ins to query tile counts, tile lists,
    * attributes, update areas, and handle parameter changes.
    */
-  call: {
-    (paramValue: unknown, command: 'getHorzCount'): number;
-    (paramValue: unknown, command: 'getVertCount'): number;
-    (paramValue: unknown, command: 'getFrontTileList'): unknown[];
-    (paramValue: unknown, command: 'getBackTileList'): unknown[];
-    (paramValue: unknown, command: 'getAttributeList'): string[];
-    (
-      paramValue: unknown,
-      command: 'updateArea',
-      area: [tileStartX: number, tileStartY: number, horzTileCount: number, vertTileCount: number]
-    ): void;
-    (paramValue: unknown, command: 'onParamChanged', prevValue: unknown): void;
-    (paramValue?: unknown, command?: string, ...args: unknown[]): unknown;
-  };
+  call:
+    | (() => void)
+    | {
+        (paramValue: unknown, command: 'getHorzCount'): number;
+        (paramValue: unknown, command: 'getVertCount'): number;
+        (paramValue: unknown, command: 'getFrontTileList'): unknown[];
+        (paramValue: unknown, command: 'getBackTileList'): unknown[];
+        (paramValue: unknown, command: 'getAttributeList'): string[];
+        (
+          paramValue: unknown,
+          command: 'updateArea',
+          area: [tileStartX: number, tileStartY: number, horzTileCount: number, vertTileCount: number]
+        ): void;
+        (paramValue: unknown, command: 'onParamChanged', prevValue: unknown): void;
+        (paramValue?: unknown, command?: string, ...args: unknown[]): unknown;
+      };
 
   /**
    * Calls update process.

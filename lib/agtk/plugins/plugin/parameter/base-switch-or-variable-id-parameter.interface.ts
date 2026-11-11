@@ -15,6 +15,6 @@ export interface AgtkBaseSwitchOrVariableIdParameter extends AgtkBaseResourceIdP
     | `${AgtkParameterType.SwitchId}`
     | AgtkParameterType.VariableId
     | `${AgtkParameterType.VariableId}`;
-  referenceId: string;
+  referenceId?: number | string;
   withNewButton?: boolean;
 }
