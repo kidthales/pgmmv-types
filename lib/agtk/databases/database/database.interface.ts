@@ -6,8 +6,6 @@
 
 /**
  * Agtk database interface.
- *
- * @todo
  */
 export interface AgtkDatabase {
   /**
@@ -23,9 +21,8 @@ export interface AgtkDatabase {
    * null if not found
    *
    * @param arg Column number.
-   * @todo
    */
-  getColumnByIndex(arg: number): unknown[] | null;
+  getColumnByIndex(arg: number): string[] | null;
 
   /**
    * Get an array of Column Value from the Column Name
@@ -33,9 +30,8 @@ export interface AgtkDatabase {
    * null if not found
    *
    * @param arg Column name
-   * @todo
    */
-  getColumnByName(arg: string): unknown[] | null;
+  getColumnByName(arg: string): string[] | null;
 
   /**
    * Get an array of Row Name
@@ -50,9 +46,8 @@ export interface AgtkDatabase {
    * null if not found
    *
    * @param arg Row number
-   * @todo
    */
-  getRowByIndex(arg: number): unknown[] | null;
+  getRowByIndex(arg: number): string[] | null;
 
   /**
    * Get an array of Row Value from the Row Name
@@ -60,9 +55,8 @@ export interface AgtkDatabase {
    * null if not found
    *
    * @param arg Row name.
-   * @todo
    */
-  getRowByName(arg: string): unknown[] | null;
+  getRowByName(arg: string): string[] | null;
 
   /**
    * Get Field Value from Number

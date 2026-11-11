@@ -30,7 +30,7 @@ export interface AgtkDatabases {
   /**
    * Get an array of Database ID
    *
-   * null if not foun
+   * null if not found
    */
   getIdList(): number[] | null;
 }
