@@ -85,7 +85,15 @@
           rowByName = db ? db.getRowByName('default') : null,
           field = db ? db.getFieldByIndex(0, 0) : null,
           sceneId = Agtk.ui.editSceneId,
-          layerIndex = Agtk.ui.editLayerIndex;
+          layerIndex = Agtk.ui.editLayerIndex,
+          // @ts-expect-error negative test: getIdList() returns number[], not scalar number
+          /** @type {number} */ invalidScalarIdList = Agtk.animations.getIdList(),
+          // @ts-expect-error negative test: invalid AgtkPluginInfoCategory rejected
+          invalidInfo = plugin.getInfo('invalidCategory');
+
+        if (dbIds === null || field === null || invalidInfo !== undefined) {
+          Agtk.log('Negative boundary error: ' + String(invalidScalarIdList));
+        }
 
         Agtk.log(
           String(
