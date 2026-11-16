@@ -130,21 +130,38 @@ function collectDisallowedSecretsRefs(value, pathLabel, out = []) {
   return out;
 }
 
-function auditPublishNpmOidcContract(wfName, doc, pubNpm, violations) {
-  const perms = pubNpm.permissions;
-  const permKeys = perms && typeof perms === 'object' && !Array.isArray(perms) ? Object.keys(perms) : [];
-  if (
-    !perms ||
-    typeof perms !== 'object' ||
-    Array.isArray(perms) ||
-    permKeys.length !== 2 ||
-    perms.contents !== 'read' ||
-    perms['id-token'] !== 'write'
-  ) {
+function hasExactPermissions(perms, expected) {
+  if (!perms || typeof perms !== 'object' || Array.isArray(perms)) {
+    return false;
+  }
+  const actualKeys = Object.keys(perms);
+  const expectedEntries = Object.entries(expected);
+  return (
+    actualKeys.length === expectedEntries.length &&
+    expectedEntries.every(([scope, level]) => Object.hasOwn(perms, scope) && perms[scope] === level)
+  );
+}
+
+function assertExactJobPermissions(wfName, jobId, job, expected, violations, reasonSuffix = '') {
+  if (!hasExactPermissions(job.permissions, expected)) {
+    const scopeList = Object.entries(expected)
+      .map(([scope, level]) => `${scope}: ${level}`)
+      .join(', ');
     violations.push(
-      `${wfName}: publish-npm job must declare exact permissions { contents: read, id-token: write } for OIDC Trusted Publishing`,
+      `${wfName}: ${jobId} job must declare exact permissions { ${scopeList} }${reasonSuffix}`,
     );
   }
+}
+
+function auditPublishNpmOidcContract(wfName, doc, pubNpm, violations) {
+  assertExactJobPermissions(
+    wfName,
+    'publish-npm',
+    pubNpm,
+    { contents: 'read', 'id-token': 'write' },
+    violations,
+    ' for OIDC Trusted Publishing',
+  );
 
   const envName = typeof pubNpm.environment === 'string' ? pubNpm.environment : pubNpm.environment?.name;
   if (envName !== 'npm') {
@@ -831,20 +848,13 @@ export function auditWorkflows(targetPath, options = {}) {
       if (!jobs.verify) {
         violations.push(`${wfName}: missing 'verify' job delegation`);
       } else {
-        const vPerms = jobs.verify.permissions;
-        const vKeys = vPerms && typeof vPerms === 'object' && !Array.isArray(vPerms) ? Object.keys(vPerms) : [];
-        if (
-          !vPerms ||
-          typeof vPerms !== 'object' ||
-          Array.isArray(vPerms) ||
-          vKeys.length !== 2 ||
-          vPerms.contents !== 'read' ||
-          vPerms['security-events'] !== 'write'
-        ) {
-          violations.push(
-            `${wfName}: verify job must declare exact permissions { contents: read, security-events: write }`,
-          );
-        }
+        assertExactJobPermissions(
+          wfName,
+          'verify',
+          jobs.verify,
+          { contents: 'read', 'security-events': 'write' },
+          violations,
+        );
         const needs = Array.isArray(jobs.verify.needs) ? jobs.verify.needs : [jobs.verify.needs];
         if (!needs.includes('tag-guard')) {
           violations.push(`${wfName}: verify job must declare needs: [tag-guard]`);
@@ -899,6 +909,15 @@ export function auditWorkflows(targetPath, options = {}) {
         if (pubJob === 'publish-npm') {
           auditPublishNpmOidcContract(wfName, doc, j, violations);
         }
+        if (pubJob === 'publish-gpr') {
+          assertExactJobPermissions(
+            wfName,
+            'publish-gpr',
+            j,
+            { contents: 'read', packages: 'write' },
+            violations,
+          );
+        }
         if (pubJob === 'publish-npm' || pubJob === 'publish-gpr') {
           const jSteps = Array.isArray(j.steps) ? j.steps : [];
           const pubScript = jSteps
@@ -918,15 +937,13 @@ export function auditWorkflows(targetPath, options = {}) {
       }
 
       if (jobs['attach-assets']) {
-        const aaPerms =
-          jobs['attach-assets'].permissions && typeof jobs['attach-assets'].permissions === 'object'
-            ? jobs['attach-assets'].permissions
-            : {};
-        if (aaPerms.contents !== 'write' || aaPerms.attestations !== 'write' || aaPerms['id-token'] !== 'write') {
-          violations.push(
-            `${wfName}: attach-assets job must explicitly scope permissions (contents: write, attestations: write, id-token: write)`,
-          );
-        }
+        assertExactJobPermissions(
+          wfName,
+          'attach-assets',
+          jobs['attach-assets'],
+          { contents: 'write', attestations: 'write', 'id-token': 'write' },
+          violations,
+        );
         const aaSteps = Array.isArray(jobs['attach-assets'].steps) ? jobs['attach-assets'].steps : [];
         const pkgIdx = aaSteps.findIndex(
           (s) => s && typeof s === 'object' && typeof s.run === 'string' && /\bnode\s+tools\/package-assets\.mjs\b/.test(s.run),

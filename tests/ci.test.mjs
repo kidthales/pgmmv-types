@@ -1347,7 +1347,7 @@ test('auditWorkflows enforces Gate 0 AST invariants (permissions types, attest s
     );
   }
 
-  // 2. release.yml verify job omitted permissions
+  // 2. release.yml verify, publish-gpr, and attach-assets exact permission map checks
   withTempGithubFixture(
     {
       '.github/workflows/release.yml': baseRelease.replace(
@@ -1361,6 +1361,47 @@ test('auditWorkflows enforces Gate 0 AST invariants (permissions types, attest s
       assert.ok(res.violations.some((v) => v.includes('verify job must declare exact permissions')));
     },
   );
+
+  for (const badGprPerms of [
+    '      contents: read\n',
+    '      contents: read\n      packages: write\n      issues: read\n',
+  ]) {
+    const mutated = baseRelease.replace(
+      '  publish-gpr:\n    needs: [tag-guard, verify]\n    runs-on: ubuntu-latest\n    timeout-minutes: 15\n    permissions:\n      contents: read\n      packages: write\n',
+      `  publish-gpr:\n    needs: [tag-guard, verify]\n    runs-on: ubuntu-latest\n    timeout-minutes: 15\n    permissions:\n${badGprPerms}`,
+    );
+    assert.notEqual(mutated, baseRelease, 'Expected publish-gpr permissions fixture mutation to apply');
+    withTempGithubFixture({ '.github/workflows/release.yml': mutated }, (dir) => {
+      const res = auditWorkflows(dir);
+      assert.equal(res.ok, false);
+      assert.ok(
+        res.violations.some((v) =>
+          v.includes('publish-gpr job must declare exact permissions { contents: read, packages: write }'),
+        ),
+        `Expected publish-gpr exact permissions violation, got: ${res.violations.join('; ')}`,
+      );
+    });
+  }
+
+  {
+    const mutated = baseRelease.replace(
+      '  attach-assets:\n    needs: [tag-guard, verify]\n    runs-on: ubuntu-latest\n    timeout-minutes: 15\n    permissions:\n      contents: write\n      attestations: write\n      id-token: write\n',
+      '  attach-assets:\n    needs: [tag-guard, verify]\n    runs-on: ubuntu-latest\n    timeout-minutes: 15\n    permissions:\n      contents: write\n      attestations: write\n      id-token: write\n      issues: read\n',
+    );
+    assert.notEqual(mutated, baseRelease, 'Expected attach-assets permissions fixture mutation to apply');
+    withTempGithubFixture({ '.github/workflows/release.yml': mutated }, (dir) => {
+      const res = auditWorkflows(dir);
+      assert.equal(res.ok, false);
+      assert.ok(
+        res.violations.some((v) =>
+          v.includes(
+            'attach-assets job must declare exact permissions { contents: write, attestations: write, id-token: write }',
+          ),
+        ),
+        `Expected attach-assets exact permissions violation, got: ${res.violations.join('; ')}`,
+      );
+    });
+  }
 
   // 3. Missing publish-gpr or attach-assets in release.yml
   withTempGithubFixture(
