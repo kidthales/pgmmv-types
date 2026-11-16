@@ -14,7 +14,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const INVALID_EXPORT_TARGET_RE = /(?:^|\/)node_modules(?:\/|$)|%(?:2e|2f|5c)/i;
 const REQUIRED_EXPORT_KEYS = ['.', './pgmmv.d.ts', './lib/*', './package.json'];
 const AGENT_LEAK_RE =
-  /^(\.agents?\/|\.gemini\/|\.ai\/|\.cursor\/|\.claude\/|scratch\/|docs\/learnings\/|AGENTS\.md$|GEMINI\.md$|CLAUDE\.md$)/;
+  /(?:^|\/)(?:\.agents?\/|\.gemini\/|\.ai\/|\.cursor\/|\.claude\/|\.ci-local\/|scratch\/|docs\/learnings\/|(?:AGENTS|GEMINI|CLAUDE)\.md$)/;
 
 function isWithinRoot(resolvedRoot, candidate) {
   const rel = relative(resolvedRoot, candidate);
@@ -54,6 +54,33 @@ function isValidSubpathKey(subpath, errors) {
     return false;
   }
   return true;
+}
+
+function verifyTargetOnDisk(resolvedPath, realRoot, label, expectDirectory, errors) {
+  let targetStat;
+  let realTargetPath;
+  try {
+    targetStat = statSync(resolvedPath);
+    realTargetPath = realpathSync(resolvedPath);
+  } catch (err) {
+    if (err?.code === 'ENOENT' || err?.code === 'ENOTDIR') {
+      errors.push(`${label} does not exist on disk.`);
+    } else {
+      errors.push(`${label} could not be inspected: ${err.message}`);
+    }
+    return;
+  }
+  if (!isWithinRoot(realRoot, realTargetPath)) {
+    errors.push(`${label} resolves outside package root via symlink.`);
+    return;
+  }
+  if (expectDirectory) {
+    if (!targetStat.isDirectory()) {
+      errors.push(`${label} must resolve to a directory.`);
+    }
+  } else if (!targetStat.isFile()) {
+    errors.push(`${label} must resolve to a file.`);
+  }
 }
 
 function auditExportNode(subpath, node, resolvedRoot, realRoot, errors) {
@@ -122,30 +149,10 @@ function auditExportNode(subpath, node, resolvedRoot, realRoot, errors) {
     errors.push(`[exports] Export "${subpath}" target "${node}" contains invalid path segment.`);
     return;
   }
-  let targetStat;
-  let realCheckPath;
-  try {
-    targetStat = statSync(resolvedCheckPath);
-    realCheckPath = realpathSync(resolvedCheckPath);
-  } catch (err) {
-    if (err?.code === 'ENOENT' || err?.code === 'ENOTDIR') {
-      errors.push(`[exports] Export "${subpath}" target "${node}" does not exist on disk.`);
-    } else {
-      errors.push(`[exports] Export "${subpath}" target "${node}" could not be inspected: ${err.message}`);
-    }
-    return;
-  }
-  if (!isWithinRoot(realRoot, realCheckPath)) {
-    errors.push(`[exports] Export "${subpath}" target "${node}" resolves outside package root via symlink.`);
-    return;
-  }
-  if (hasWildcard) {
-    if (!targetStat.isDirectory()) {
-      errors.push(`[exports] Export "${subpath}" wildcard target "${node}" prefix must resolve to a directory.`);
-    }
-  } else if (!targetStat.isFile()) {
-    errors.push(`[exports] Export "${subpath}" target "${node}" must resolve to a file.`);
-  }
+  const label = hasWildcard
+    ? `[exports] Export "${subpath}" wildcard target "${node}" prefix`
+    : `[exports] Export "${subpath}" target "${node}"`;
+  verifyTargetOnDisk(resolvedCheckPath, realRoot, label, hasWildcard, errors);
 }
 
 export function auditPackageExports(targetRoot, pkg) {
@@ -161,10 +168,14 @@ export function auditPackageExports(targetRoot, pkg) {
   if (typeof pkg.main === 'string' && pkg.main.endsWith('.ts')) {
     errors.push(`[package] package.json "main" must not point to raw TypeScript "${pkg.main}".`);
   }
-  if (typeof pkg.types === 'string') {
+  if (typeof pkg.types !== 'string' || pkg.types.trim().length === 0) {
+    errors.push('[types] package.json "types" must be a non-empty string.');
+  } else {
     const resolvedTypes = resolve(resolvedRoot, pkg.types);
-    if (!isWithinRoot(resolvedRoot, resolvedTypes) || !existsSync(resolvedTypes)) {
-      errors.push(`[types] package.json "types" target "${pkg.types}" does not exist on disk.`);
+    if (!isWithinRoot(resolvedRoot, resolvedTypes)) {
+      errors.push(`[types] package.json "types" target "${pkg.types}" resolves outside package root.`);
+    } else {
+      verifyTargetOnDisk(resolvedTypes, realRoot, `[types] package.json "types" target "${pkg.types}"`, false, errors);
     }
   }
 

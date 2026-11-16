@@ -7,6 +7,7 @@
 import { execFileSync } from 'node:child_process';
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   readdirSync,
   readFileSync,
@@ -20,6 +21,22 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const RESERVED_OUT_DIRS = ['.git', '.github', 'lib', 'tools', 'tests', 'test', 'node_modules'];
+const STATEMENT_RESET_KEYWORDS = new Set([
+  'import',
+  'export',
+  'declare',
+  'interface',
+  'type',
+  'class',
+  'const',
+  'let',
+  'var',
+  'function',
+  'enum',
+  'namespace',
+  'abstract'
+]);
 
 function compareCodePoints(a, b) {
   return a < b ? -1 : a > b ? 1 : 0;
@@ -103,6 +120,17 @@ function resolveRelativeSpecifier(spec, filePath, distRoot, realDistRoot) {
   throw new Error(`Unresolvable relative declaration specifier "${spec}" in ${relative(distRoot, filePath)}`);
 }
 
+function getPackageName(spec) {
+  if (!spec || spec.startsWith('.') || spec.startsWith('/') || spec.startsWith('node:')) {
+    return null;
+  }
+  if (spec.startsWith('@')) {
+    const parts = spec.split('/');
+    return parts.length >= 2 && parts[1] ? `${parts[0]}/${parts[1]}` : null;
+  }
+  return spec.split('/')[0] || null;
+}
+
 export function rewriteDeclarationSpecifiers(
   source,
   filePath,
@@ -116,6 +144,7 @@ export function rewriteDeclarationSpecifiers(
   let prev2 = null;
   let stmtStart = true;
   let isImportTypeStmt = false;
+  let braceDepth = 0;
 
   const pushToken = (type, value) => {
     prev2 = prev1;
@@ -181,13 +210,14 @@ export function rewriteDeclarationSpecifiers(
         (prev1?.type === 'ident' && prev1.value === 'import') ||
         (prev2?.type === 'ident' && prev2.value === 'import' && prev1?.type === 'punct' && prev1.value === '(');
 
+      const pkgName = getPackageName(spec);
       if (
         isModuleSpecifier &&
         (spec === '.' || spec === '..' || spec.startsWith('./') || spec.startsWith('../'))
       ) {
         const rewritten = resolveRelativeSpecifier(spec, filePath, distRoot, realDistRoot);
         out.push(`${quote}${rewritten}${quote}`);
-      } else if (isFromClause && isImportTypeStmt && esmPackages.has(spec)) {
+      } else if (isFromClause && isImportTypeStmt && pkgName && esmPackages.has(pkgName)) {
         // Add resolution-mode attribute for type-only imports of ESM dependencies from CJS .d.ts files
         let lookahead = i;
         while (lookahead < source.length && /[ \t\r\n]/.test(source[lookahead])) {
@@ -248,9 +278,15 @@ export function rewriteDeclarationSpecifiers(
         i++;
       }
       const ident = source.slice(start, i);
-      if (stmtStart) {
+      const isStmtKeyword =
+        braceDepth === 0 &&
+        prev1?.value !== '.' &&
+        STATEMENT_RESET_KEYWORDS.has(ident) &&
+        !(ident === 'type' && prev1?.type === 'ident' && (prev1.value === 'import' || prev1.value === 'export'));
+      if (stmtStart || isStmtKeyword) {
         isImportTypeStmt = false;
-      } else if (prev1?.type === 'ident' && prev1.value === 'import' && ident === 'type') {
+      }
+      if (prev1?.type === 'ident' && prev1.value === 'import' && ident === 'type') {
         isImportTypeStmt = true;
       }
       out.push(ident);
@@ -260,6 +296,11 @@ export function rewriteDeclarationSpecifiers(
     }
 
     // Punctuation / other character
+    if (ch === '{') {
+      braceDepth++;
+    } else if (ch === '}' && braceDepth > 0) {
+      braceDepth--;
+    }
     out.push(ch);
     pushToken('punct', ch);
     stmtStart = ch === ';';
@@ -307,16 +348,167 @@ function collectEsmDependencies(targetRoot) {
   return esmDeps;
 }
 
+function findNearestExistingAncestor(targetPath, stopAt) {
+  let current = targetPath;
+  while (!existsSync(current)) {
+    if (current === stopAt) {
+      break;
+    }
+    const parent = dirname(current);
+    if (parent === current) {
+      break;
+    }
+    current = parent;
+  }
+  return current;
+}
+
+export function validateOutDir(targetRoot, rawOutDir) {
+  const realTargetRoot = realpathSync(targetRoot);
+  const outDir = resolve(targetRoot, rawOutDir);
+
+  if (!isWithinRoot(targetRoot, outDir) || outDir === targetRoot) {
+    throw new Error(`Invalid output directory "${outDir}": must be a subdirectory inside ${targetRoot}`);
+  }
+
+  for (const reserved of RESERVED_OUT_DIRS) {
+    const reservedPath = join(targetRoot, reserved);
+    if (isWithinRoot(reservedPath, outDir)) {
+      throw new Error(`Invalid output directory "${outDir}": cannot target reserved directory "${reserved}"`);
+    }
+  }
+
+  const parentDir = dirname(outDir);
+  const existingParent = findNearestExistingAncestor(parentDir, targetRoot);
+  let realExistingParent;
+  try {
+    realExistingParent = realpathSync(existingParent);
+  } catch (err) {
+    throw new Error(`Invalid output directory "${outDir}": cannot resolve parent directory: ${err.message}`);
+  }
+  if (!isWithinRoot(realTargetRoot, realExistingParent)) {
+    throw new Error(`Invalid output directory "${outDir}": parent resolves outside ${targetRoot} via symlink`);
+  }
+
+  let outLstat = null;
+  try {
+    outLstat = lstatSync(outDir);
+  } catch (err) {
+    if (err?.code !== 'ENOENT') {
+      throw new Error(`Invalid output directory "${outDir}": ${err.message}`);
+    }
+  }
+  if (outLstat) {
+    let realOutDir;
+    try {
+      realOutDir = realpathSync(outDir);
+    } catch (err) {
+      throw new Error(`Invalid output directory "${outDir}": cannot resolve target: ${err.message}`);
+    }
+    if (!isWithinRoot(realTargetRoot, realOutDir) || realOutDir === realTargetRoot) {
+      throw new Error(`Invalid output directory "${outDir}": resolves outside ${targetRoot} via symlink`);
+    }
+    for (const reserved of RESERVED_OUT_DIRS) {
+      const reservedPath = join(targetRoot, reserved);
+      if (existsSync(reservedPath)) {
+        const realReserved = realpathSync(reservedPath);
+        if (isWithinRoot(realReserved, realOutDir)) {
+          throw new Error(`Invalid output directory "${outDir}": resolves inside reserved directory "${reserved}"`);
+        }
+      }
+    }
+  }
+
+  return outDir;
+}
+
+function collectFilesStrict(dirPath, rootLabel) {
+  const results = [];
+
+  function walk(currentDir) {
+    const entries = readdirSync(currentDir, { withFileTypes: true }).sort((a, b) =>
+      compareCodePoints(a.name, b.name)
+    );
+    for (const entry of entries) {
+      const fullPath = join(currentDir, entry.name);
+      if (entry.isSymbolicLink()) {
+        throw new Error(`Unexpected symlink in ${rootLabel}: ${relative(dirPath, fullPath)}`);
+      }
+      if (entry.isDirectory()) {
+        walk(fullPath);
+      } else if (entry.isFile()) {
+        results.push(fullPath);
+      }
+    }
+  }
+
+  walk(dirPath);
+  return results;
+}
+
+function compareDeclarationTrees(expectedDir, actualDir, targetRoot) {
+  const relOut = relative(targetRoot, actualDir).replace(/\\/g, '/') || '.';
+  const actualFiles = collectFilesStrict(actualDir, `${relOut}/`);
+  const nonDts = actualFiles.filter((f) => !f.endsWith('.d.ts'));
+  if (nonDts.length > 0) {
+    const sample = nonDts
+      .slice(0, 5)
+      .map((f) => relative(actualDir, f).replace(/\\/g, '/'))
+      .join(', ');
+    throw new Error(`Unexpected non-.d.ts file(s) in ${relOut}/: ${sample}`);
+  }
+
+  const expectedRel = collectFiles(expectedDir, () => true)
+    .map((f) => relative(expectedDir, f).replace(/\\/g, '/'))
+    .sort(compareCodePoints);
+  const actualRel = actualFiles
+    .map((f) => relative(actualDir, f).replace(/\\/g, '/'))
+    .sort(compareCodePoints);
+
+  const expectedSet = new Set(expectedRel);
+  const actualSet = new Set(actualRel);
+  const missing = expectedRel.filter((rel) => !actualSet.has(rel));
+  const extra = actualRel.filter((rel) => !expectedSet.has(rel));
+  const drifted = [];
+
+  for (const rel of expectedRel) {
+    if (!actualSet.has(rel)) {
+      continue;
+    }
+    const expectedBuf = readFileSync(join(expectedDir, rel));
+    const actualBuf = readFileSync(join(actualDir, rel));
+    if (Buffer.compare(expectedBuf, actualBuf) !== 0) {
+      drifted.push(rel);
+    }
+  }
+
+  if (missing.length > 0 || extra.length > 0 || drifted.length > 0) {
+    const parts = [];
+    if (missing.length > 0) {
+      parts.push(`missing (${missing.length}): ${missing.slice(0, 5).join(', ')}`);
+    }
+    if (extra.length > 0) {
+      parts.push(`extra (${extra.length}): ${extra.slice(0, 5).join(', ')}`);
+    }
+    if (drifted.length > 0) {
+      parts.push(`drifted (${drifted.length}): ${drifted.slice(0, 5).join(', ')}`);
+    }
+    throw new Error(`Declaration output ${relOut}/ is out of date (${parts.join('; ')}). Run "npm run generate".`);
+  }
+}
+
 export function generateDeclarations(options = {}) {
   const targetRoot = resolve(options.rootDir ?? root);
   const libDir = join(targetRoot, 'lib');
-  const outDir = resolve(targetRoot, options.outDir ?? 'dist');
+  const check = Boolean(options.check);
 
   if (!existsSync(libDir) || !statSync(libDir).isDirectory()) {
     throw new Error(`Missing lib/ directory at ${libDir}`);
   }
-  if (!isWithinRoot(targetRoot, outDir) || outDir === targetRoot || outDir === libDir) {
-    throw new Error(`Invalid output directory "${outDir}": must be a subdirectory inside ${targetRoot}`);
+
+  const outDir = validateOutDir(targetRoot, options.outDir ?? 'dist');
+  if (check && (!existsSync(outDir) || !statSync(outDir).isDirectory())) {
+    throw new Error(`Missing output directory "${outDir}" for --check; run "npm run generate" first.`);
   }
 
   const tscBin = join(targetRoot, 'node_modules', 'typescript', 'bin', 'tsc');
@@ -415,13 +607,23 @@ export function generateDeclarations(options = {}) {
       targetRoot
     );
 
+    if (check) {
+      compareDeclarationTrees(stagingDir, outDir, targetRoot);
+      return {
+        count: emittedFiles.length,
+        outDir,
+        checked: true
+      };
+    }
+
     // 5. Atomically swap verified declarations into outDir
     rmSync(outDir, { recursive: true, force: true });
     renameSync(stagingDir, outDir);
 
     return {
       count: emittedFiles.length,
-      outDir
+      outDir,
+      checked: false
     };
   } finally {
     rmSync(stagingDir, { recursive: true, force: true });
@@ -442,6 +644,7 @@ function isDirectCli(metaUrl) {
 if (isDirectCli(import.meta.url)) {
   let targetRoot = root;
   let outDir = 'dist';
+  let check = false;
   const argv = process.argv.slice(2);
 
   for (let i = 0; i < argv.length; i++) {
@@ -474,6 +677,8 @@ if (isDirectCli(import.meta.url)) {
         process.exit(1);
       }
       outDir = val;
+    } else if (arg === '--check') {
+      check = true;
     } else {
       console.error(`✖ Generate failed: Unknown option "${arg}"`);
       process.exit(1);
@@ -481,11 +686,15 @@ if (isDirectCli(import.meta.url)) {
   }
 
   try {
-    const result = generateDeclarations({ rootDir: targetRoot, outDir });
+    const result = generateDeclarations({ rootDir: targetRoot, outDir, check });
     const relOut = relative(targetRoot, result.outDir).replace(/\\/g, '/') || '.';
-    console.log(
-      `✔ Generated ${result.count} node16-clean .d.ts declaration(s) into ${relOut}/ (0 .js files emitted).`
-    );
+    if (result.checked) {
+      console.log(`✔ Verified ${result.count} node16-clean .d.ts declaration(s) in ${relOut}/ match lib/.`);
+    } else {
+      console.log(
+        `✔ Generated ${result.count} node16-clean .d.ts declaration(s) into ${relOut}/ (0 .js files emitted).`
+      );
+    }
   } catch (err) {
     console.error(`✖ Generate failed: ${err.message}`);
     process.exit(1);
