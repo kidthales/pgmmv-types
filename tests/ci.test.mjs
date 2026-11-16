@@ -634,6 +634,27 @@ jobs:
 
   withTempGithubFixture(
     {
+      '.github/workflows/stepless_matrix.yml': `name: SteplessMatrix
+permissions:
+  contents: read
+jobs:
+  matrix_only:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [22, 24]
+    steps: []
+`,
+    },
+    (dir) => {
+      const res = auditWorkflows(dir);
+      assert.equal(res.ok, false);
+      assert.ok(res.violations.some((v) => v.includes("job 'matrix_only' missing 'timeout-minutes'")));
+    },
+  );
+
+  withTempGithubFixture(
+    {
       '.github/workflows/uses.yml': `name: Uses
 permissions:
   contents: read

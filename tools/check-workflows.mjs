@@ -587,8 +587,8 @@ export function auditWorkflows(targetPath, options = {}) {
 
       const hasSteps = Array.isArray(job.steps) && job.steps.length > 0;
 
-      // 2. Timeout-minutes enforcement on every job that runs steps
-      if (hasSteps || (!job.uses && !job.strategy?.matrix)) {
+      // 2. Timeout-minutes enforcement on every non-reusable runner job
+      if (hasSteps || !job.uses) {
         const timeout = job['timeout-minutes'];
         if (timeout === undefined || timeout === null) {
           violations.push(
