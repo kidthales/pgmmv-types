@@ -282,16 +282,37 @@ test('validateOutDir rejects reserved directories, subtrees, and symlink escapes
       mkdirSync(join(dir, 'test'), { recursive: true });
       mkdirSync(join(dir, 'node_modules'), { recursive: true });
       mkdirSync(join(dir, '.git'), { recursive: true });
+      mkdirSync(join(dir, '.ci-local'), { recursive: true });
+      mkdirSync(join(dir, 'real-dist'), { recursive: true });
+      writeFileSync(join(dir, 'package.json'), '{}', 'utf8');
 
       assert.equal(validateOutDir(dir, 'dist'), join(dir, 'dist'));
 
-      for (const badOut of ['../outside', '.', 'lib', 'lib/agtk', '.git', '.github', 'tools', 'tests/sub', 'test', 'node_modules/x']) {
+      for (const badOut of [
+        '../outside',
+        '.',
+        'lib',
+        'lib/agtk',
+        '.git',
+        '.github',
+        '.ci-local',
+        '.ci-local/sub',
+        'tools',
+        'tests/sub',
+        'test',
+        'node_modules/x'
+      ]) {
         assert.throws(
           () => validateOutDir(dir, badOut),
           /Invalid output directory/,
           `Expected validateOutDir to reject "${badOut}"`
         );
       }
+
+      assert.throws(
+        () => validateOutDir(dir, 'package.json'),
+        /target exists and is not a directory/
+      );
 
       const dirLinkType = process.platform === 'win32' ? 'junction' : 'dir';
       symlinkSync(outsideDir, join(dir, 'link-parent'), dirLinkType);
@@ -304,6 +325,12 @@ test('validateOutDir rejects reserved directories, subtrees, and symlink escapes
       assert.throws(
         () => validateOutDir(dir, 'link-lib'),
         /resolves inside reserved directory/
+      );
+
+      symlinkSync(join(dir, 'real-dist'), join(dir, 'link-dist'), dirLinkType);
+      assert.throws(
+        () => validateOutDir(dir, 'link-dist'),
+        /cannot be a symbolic link/
       );
     });
   });

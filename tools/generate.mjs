@@ -21,7 +21,7 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const RESERVED_OUT_DIRS = ['.git', '.github', 'lib', 'tools', 'tests', 'test', 'node_modules'];
+const RESERVED_OUT_DIRS = ['.git', '.github', '.ci-local', 'lib', 'tools', 'tests', 'test', 'node_modules'];
 const STATEMENT_RESET_KEYWORDS = new Set([
   'import',
   'export',
@@ -416,6 +416,12 @@ export function validateOutDir(targetRoot, rawOutDir) {
           throw new Error(`Invalid output directory "${outDir}": resolves inside reserved directory "${reserved}"`);
         }
       }
+    }
+    if (outLstat.isSymbolicLink()) {
+      throw new Error(`Invalid output directory "${outDir}": cannot be a symbolic link`);
+    }
+    if (!outLstat.isDirectory()) {
+      throw new Error(`Invalid output directory "${outDir}": target exists and is not a directory`);
     }
   }
 
