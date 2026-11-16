@@ -1,4 +1,4 @@
-import type { Agtk, cc, jsb } from './lib';
+import type { Agtk, cc, jsb } from './dist/index.js';
 
 declare global {
   /**
@@ -15,11 +15,4 @@ declare global {
    * Cocos JSB namespace.
    */
   const jsb: jsb;
-
-  /**
-   * Window interface augmentation for kidthales plugins.
-   */
-  interface Window {
-    kt: any;
-  }
 }

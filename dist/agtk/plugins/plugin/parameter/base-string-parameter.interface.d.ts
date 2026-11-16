@@ -1,0 +1,14 @@
+/**
+ * Agtk plugin base string UI parameter interface module.
+ *
+ * @packageDocumentation
+ */
+import type { AgtkBaseParameter } from './base-parameter.interface.js';
+import type { AgtkParameterType } from './parameter-type.enum.js';
+/**
+ * Agtk plugin base string UI parameter interface.
+ */
+export interface AgtkBaseStringParameter extends AgtkBaseParameter {
+    type: AgtkParameterType.String | `${AgtkParameterType.String}` | AgtkParameterType.MultiLineString | `${AgtkParameterType.MultiLineString}`;
+    defaultValue: string;
+}

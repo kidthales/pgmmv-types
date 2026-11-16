@@ -2,9 +2,26 @@
 /// <reference path="../pgmmv.d.ts" />
 /* global Agtk, window */
 
+/**
+ * Plain-JS `@ts-check` compatibility fixture for `@kidthales/pgmmv-types`.
+ *
+ * Type-checked against `tsconfig.json` (`lib: ["es2020", "dom"]`) and validated
+ * separately for ES5 syntax (`ecmaVersion: 5`, `sourceType: "script"`) by
+ * `tools/lint.mjs` via `acorn`. Note that `tsconfig.json`'s `es2020` lib does
+ * not restrict ES2015+ standard library methods; runtime ES5 API discipline
+ * remains the author's responsibility.
+ */
+
 (function () {
-  /** @type {import('../lib/agtk/plugins/plugin').AgtkLinkCondition} */
-  var linkCondition = {
+  /** @type {import('../lib/agtk/plugins/plugin/parameter').AgtkEmbeddedEditableParameter} */
+  var editableParam = {
+      id: 3,
+      name: 'Embedded Editable Preview',
+      type: 'EmbeddedEditable',
+      reference: 'text'
+    },
+    /** @type {import('../lib/agtk/plugins/plugin').AgtkLinkCondition} */
+    linkCondition = {
       id: 0,
       name: 'Fixture Link Condition',
       description: 'Verifies SwitchVariableObjectId and numeric referenceId.',
@@ -32,7 +49,8 @@
           width: 32,
           height: 32,
           defaultValue: -1
-        }
+        },
+        editableParam
       ]
     },
     /** @type {import('../lib/agtk/plugins/plugin').AgtkPlugin} */
@@ -44,7 +62,7 @@
           case 'name':
             return 'PGMMV Types Regression Fixture';
           case 'description':
-            return 'Verifies plain ES5 checkJs compatibility.';
+            return 'Verifies plain-JS @ts-check compatibility.';
           case 'author':
             return 'kidthales <kidthales@agogpixel.com>';
           case 'help':
@@ -63,10 +81,6 @@
       },
 
       initialize: function () {
-        if (!window.kt) {
-          window.kt = {};
-        }
-
         var animIds = Agtk.animations.getIdList(),
           bgmIds = Agtk.bgms.getIdList(),
           fontIds = Agtk.fonts.getIdList(),
@@ -87,12 +101,36 @@
           field = db ? db.getFieldByIndex(0, 0) : null,
           sceneId = Agtk.ui.editSceneId,
           layerIndex = Agtk.ui.editLayerIndex,
+          /** @type {import('../lib/agtk/plugins/plugin').AgtkPluginInfoResult<'parameter'>} */
+          typedParams = /** @type {import('../lib/agtk/plugins/plugin').AgtkPluginInfoResult<'parameter'>} */ (
+            plugin.getInfo('parameter')
+          ),
+          /** @type {import('../lib/agtk/plugins/plugin').AgtkAutoTileCallResult<'getHorzCount'>} */
+          horzCount = /** @type {import('../lib/agtk/plugins/plugin').AgtkAutoTileCallResult<'getHorzCount'>} */ (
+            autoTilePlugin.call([], 'getHorzCount')
+          ),
           // @ts-expect-error negative test: getIdList() returns number[], not scalar number
           /** @type {number} */ invalidScalarIdList = Agtk.animations.getIdList(),
           // @ts-expect-error negative test: invalid AgtkPluginInfoCategory rejected
-          invalidInfo = plugin.getInfo('invalidCategory');
+          invalidInfo = plugin.getInfo('invalidCategory'),
+          // @ts-expect-error negative test: Window.kt is not globally augmented
+          invalidWindowKt = window.kt,
+          // @ts-expect-error negative test: AgtkEmbeddedParameter requires sourceId
+          /** @type {import('../lib/agtk/plugins/plugin/parameter').AgtkEmbeddedParameter} */ invalidEmbedded = {
+            id: 4,
+            name: 'Missing Source',
+            type: 'Embedded'
+          };
 
-        if (dbIds === null || field === null || invalidInfo !== undefined) {
+        if (
+          dbIds === null ||
+          field === null ||
+          invalidInfo !== undefined ||
+          invalidWindowKt ||
+          invalidEmbedded ||
+          typedParams.length === 0 ||
+          horzCount < 0
+        ) {
           Agtk.log('Negative boundary error: ' + String(invalidScalarIdList));
         }
 
