@@ -1,0 +1,20 @@
+/**
+ * Cocos class constructor interface module.
+ *
+ * @packageDocumentation
+ */
+import type { Constructor } from '../../_shared/index.js';
+import type { CCClass } from './class.interface.js';
+/**
+ * Cocos class constructor interface.
+ *
+ * @constructor
+ */
+export interface CCClassConstructor<T extends CCClass = CCClass, U extends any[] = never> extends Constructor<T, U> {
+    /**
+     * Create a new Class that inherits from this Class.
+     *
+     * @param props
+     */
+    extend<V extends this>(props: Record<string, unknown>): V;
+}

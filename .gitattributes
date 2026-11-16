@@ -3,6 +3,7 @@
 *.js text eol=lf
 *.json text eol=lf
 *.md text eol=lf
+*.mjs text eol=lf
 *.ts text eol=lf
 *.yml text eol=lf
 package-lock.json text eol=lf merge=ours
@@ -11,8 +12,6 @@ package-lock.json text eol=lf merge=ours
 .editorconfig export-ignore
 .gitattributes export-ignore
 .gitignore export-ignore
-.prettierignore export-ignore
-.prettierrc export-ignore
-eslint.config.js export-ignore
 package-lock.json export-ignore
 tsconfig.json export-ignore
+tools export-ignore

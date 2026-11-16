@@ -11,4 +11,5 @@ import type { AgtkParameterType } from './parameter-type.enum';
  */
 export interface AgtkEmbeddedParameter extends AgtkBaseEmbeddedParameter {
   type: AgtkParameterType.Embedded | `${AgtkParameterType.Embedded}`;
+  sourceId: number | string;
 }
