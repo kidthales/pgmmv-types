@@ -8,5 +8,5 @@
     "noEmit": true,
     "strict": true
   },
-  "exclude": ["node_modules", "**/.tmp-dist-*"]
+  "exclude": ["node_modules", "**/.tmp-*"]
 }
