@@ -1,4 +1,4 @@
-import type { Agtk, cc, jsb } from './lib';
+import type { Agtk, cc, jsb } from './dist/index.js';
 
 declare global {
   /**

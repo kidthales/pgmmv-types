@@ -8,7 +8,7 @@
     "access": "public",
     "registry": "https://registry.npmjs.org/"
   },
-  "types": "./pgmmv.d.ts",
+  "types": "./dist/index.d.ts",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/kidthales/pgmmv-types.git"
@@ -36,7 +36,7 @@
   ],
   "exports": {
     ".": {
-      "types": "./pgmmv.d.ts"
+      "types": "./dist/index.d.ts"
     },
     "./pgmmv.d.ts": "./pgmmv.d.ts",
     "./lib/*": "./lib/*",
@@ -47,6 +47,7 @@
     "node": ">=22.2.0"
   },
   "scripts": {
+    "generate": "node tools/generate.mjs",
     "lint": "tsc --noEmit && node tools/lint.mjs"
   },
   "dependencies": {

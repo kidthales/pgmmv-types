@@ -1,0 +1,17 @@
+/**
+ * Agtk plugin base embedded UI parameter interface module.
+ *
+ * @packageDocumentation
+ */
+import type { AgtkBaseParameter } from './base-parameter.interface.js';
+import type { AgtkParameterType } from './parameter-type.enum.js';
+/**
+ * Agtk plugin base embedded UI parameter interface.
+ */
+export interface AgtkBaseEmbeddedParameter extends AgtkBaseParameter {
+    type: AgtkParameterType.Embedded | `${AgtkParameterType.Embedded}` | AgtkParameterType.EmbeddedEditable | `${AgtkParameterType.EmbeddedEditable}`;
+    sourceId?: number | string;
+    reference?: 'fontId' | 'text';
+    width?: number;
+    height?: number;
+}
