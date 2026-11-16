@@ -5,9 +5,9 @@ All notable changes to `@kidthales/pgmmv-types` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.0-alpha.1] - 2026-11-15
+## [0.2.0] - 2026-11-16
 
-Pre-release preparing `@kidthales/pgmmv-types` for public npm registry publication with generated `node16`-clean `dist/` declarations, AutoTile and Database declaration updates, and a zero-bloat TypeScript 7 toolchain.
+Release preparing `@kidthales/pgmmv-types` for public npm registry publication with generated `node16`-clean `dist/` declarations, AutoTile and Database declaration updates, and a zero-bloat TypeScript 7 toolchain.
 
 ### Breaking Changes
 
@@ -23,7 +23,7 @@ Pre-release preparing `@kidthales/pgmmv-types` for public npm registry publicati
     // Before (0.1.x):
     // const params = plugin.getInfo(AgtkPluginInfoCategory.Parameter); // AgtkParameter[]
 
-    // After (0.2.0-alpha.1):
+    // After (0.2.0):
     const rawParams = plugin.getInfo('parameter');
     const params = rawParams as AgtkPluginInfoResult<'parameter'>;
     const internal = plugin.getInfo('internal') as AgtkPluginInfoResult<'internal', { count: number }>;
@@ -55,7 +55,10 @@ Pre-release preparing `@kidthales/pgmmv-types` for public npm registry publicati
   - Made `AgtkBaseSwitchOrVariableIdParameter.referenceId` optional and widened its type to `number | string`.
   - Required `sourceId: number | string` on `AgtkEmbeddedParameter` while keeping `sourceId?: number | string` optional on `AgtkBaseEmbeddedParameter` (preserving optional `sourceId` on `AgtkEmbeddedEditableParameter`).
 - **Global reference update (`pgmmv.d.ts`)**: Updated `pgmmv.d.ts` to import `{ Agtk, cc, jsb }` from `./dist/index.js` (`#77`).
-- **Dependency cleanup**: Synchronized `package.json` and `package-lock.json` to `0.2.0-alpha.1` and removed legacy ESLint, `@typescript-eslint/*`, `@eslint/eslintrc`, Prettier, and `concurrently` dependencies and config files (`#77`).
+- **Dependency cleanup**: Synchronized `package.json` and `package-lock.json` to `0.2.0` and removed legacy ESLint, `@typescript-eslint/*`, `@eslint/eslintrc`, Prettier, and `concurrently` dependencies and config files (`#77`).
+- **Toolchain & workflow hardening (`#84`, `#86`)**:
+  - Hardened `validateOutDir` in `tools/generate.mjs` with file, symlink, and `.ci-local` guards, and broadened temporary probe exclusions to `**/.tmp-*` in `tsconfig.json` and `.gitignore` (`#84`).
+  - Enforced symmetric exact job-permission maps on `publish-gpr` and `attach-assets` in `tools/check-workflows.mjs` with negative falsification tests in `tests/ci.test.mjs` (`#86`).
 
 ### Fixed
 
