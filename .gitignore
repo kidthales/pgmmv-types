@@ -28,6 +28,9 @@ dist/SHA256SUMS.txt
 # Local CI receipts and history
 .ci-local/
 
+# Temporary test probe directories
+**/.tmp-*
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
