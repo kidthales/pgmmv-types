@@ -4,7 +4,18 @@
 
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assertSafeWriteTarget, isDirectCli, isSameOrSubpath, parseCliOutDir, resolveOutDir, resolveRealPath } from './path-jail.mjs';
@@ -37,9 +48,13 @@ function assertSafeAssetsDir(assetsDir, baseDir) {
   return true;
 }
 
-function resolveNpmCommand(args) {
+export function resolveNpmCommand(args) {
   const npmExecPath = process.env.npm_execpath;
-  if (typeof npmExecPath === 'string' && /\.(?:m|c)?js$/i.test(npmExecPath) && existsSync(npmExecPath)) {
+  if (
+    typeof npmExecPath === 'string' &&
+    /(?:^|[\\/])npm(?:-cli)?\.(?:m|c)?js$/i.test(npmExecPath) &&
+    existsSync(npmExecPath)
+  ) {
     return { command: process.execPath, args: [npmExecPath, ...args] };
   }
 
@@ -97,12 +112,36 @@ function cleanupOtherTarballs(assetsDir, keepName) {
   return removed;
 }
 
+function purgeExistingSums(targetDist) {
+  const sumsPath = join(targetDist, 'SHA256SUMS.txt');
+  let st;
+  try {
+    st = lstatSync(sumsPath);
+  } catch (err) {
+    if (err?.code === 'ENOENT') {
+      return;
+    }
+    throw err;
+  }
+  if (st.isDirectory()) {
+    throw new Error(`Invalid SHA256SUMS.txt: expected file at ${sumsPath}`);
+  }
+  if (st.isSymbolicLink()) {
+    throw new Error(`Invalid SHA256SUMS.txt: refusing to traverse symbolic link at ${sumsPath}`);
+  }
+  assertSafeWriteTarget(sumsPath, targetDist);
+  unlinkSync(sumsPath);
+}
+
 /**
  * Packages the npm tarball into `<outDir>/assets/*.tgz` and writes `<outDir>/SHA256SUMS.txt`.
  */
 export function packageAssets(opts = {}) {
   if (opts === null || typeof opts !== 'object' || Array.isArray(opts)) {
     throw new Error('Invalid options: must be an object');
+  }
+  if ('rootDir' in opts && opts.rootDir !== undefined && (typeof opts.rootDir !== 'string' || opts.rootDir.trim() === '')) {
+    throw new Error('Invalid rootDir: must be a non-empty string path');
   }
 
   const targetRoot = resolveRealPath(opts.rootDir ?? root);
@@ -120,38 +159,54 @@ export function packageAssets(opts = {}) {
     throw new Error(`Cannot package assets: generated declarations missing at ${generatedEntryPath}. Run npm run generate first.`);
   }
 
-  const rawOutDir = 'outDir' in opts ? opts.outDir : join(targetRoot, 'dist');
-  const targetDist = resolveOutDir({
-    outDir: rawOutDir,
-    allowedRoot: opts.allowedRoot ?? targetRoot,
-  });
+  const outDirOpts = { rootDir: targetRoot };
+  if ('outDir' in opts) {
+    outDirOpts.outDir = opts.outDir;
+  }
+  if ('allowedRoot' in opts) {
+    outDirOpts.allowedRoot = opts.allowedRoot;
+  }
+  const targetDist = resolveOutDir(outDirOpts);
 
   const assetsDir = join(targetDist, 'assets');
+  if (assertSafeAssetsDir(assetsDir, targetDist)) {
+    cleanupOtherTarballs(assetsDir, '');
+  }
+  purgeExistingSums(targetDist);
+
+  const tempPackDir = mkdtempSync(join(tmpdir(), 'pgmmv_pack_'));
+  let tarballName;
+  let tarballBuf;
+  try {
+    const npmInv = resolveNpmCommand(['pack', '--ignore-scripts', '--pack-destination', tempPackDir, '--json']);
+    let packStdout;
+    try {
+      packStdout = execFileSync(npmInv.command, npmInv.args, {
+        cwd: targetRoot,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    } catch (err) {
+      const details = [err.stdout, err.stderr].filter(Boolean).join('\n').trim();
+      throw new Error(`npm pack failed: ${details || err.message}`);
+    }
+
+    tarballName = parsePackedFilename(packStdout);
+    const stagedTarballPath = assertSafeWriteTarget(join(tempPackDir, tarballName), tempPackDir);
+    if (!existsSync(stagedTarballPath)) {
+      throw new Error(`Expected packed tarball not found at ${stagedTarballPath}`);
+    }
+    tarballBuf = readFileSync(stagedTarballPath);
+  } finally {
+    rmSync(tempPackDir, { recursive: true, force: true });
+  }
+
   assertSafeAssetsDir(assetsDir, targetDist);
   mkdirSync(assetsDir, { recursive: true });
-
-  const npmInv = resolveNpmCommand(['pack', '--ignore-scripts', '--pack-destination', assetsDir, '--json']);
-  let packStdout;
-  try {
-    packStdout = execFileSync(npmInv.command, npmInv.args, {
-      cwd: targetRoot,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-  } catch (err) {
-    const details = [err.stdout, err.stderr].filter(Boolean).join('\n').trim();
-    throw new Error(`npm pack failed: ${details || err.message}`);
-  }
-
-  const tarballName = parsePackedFilename(packStdout);
   const tarballPath = assertSafeWriteTarget(join(assetsDir, tarballName), assetsDir);
-  if (!existsSync(tarballPath)) {
-    throw new Error(`Expected packed tarball not found at ${tarballPath}`);
-  }
-
+  writeFileSync(tarballPath, tarballBuf);
   cleanupOtherTarballs(assetsDir, tarballName);
 
-  const tarballBuf = readFileSync(tarballPath);
   const licenseBuf = readFileSync(licensePath);
 
   const releaseAssets = [
@@ -208,7 +263,7 @@ if (isDirectCli(import.meta.url)) {
 
   try {
     const cliOutDir = parseCliOutDir(outDirArgv);
-    const opts = cliOutDir ? { rootDir: targetRoot, outDir: cliOutDir } : { rootDir: targetRoot };
+    const opts = cliOutDir !== undefined ? { rootDir: targetRoot, outDir: cliOutDir } : { rootDir: targetRoot };
     const result = packageAssets(opts);
     console.log(
       `✔ Packaged ${result.tarballName} (${result.tarballBytes} B) and wrote SHA256SUMS.txt (${result.assets.length} asset(s)).`,

@@ -6,16 +6,16 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { gunzipSync } from 'node:zlib';
 import {
   auditWorkflows,
   auditZizmorConfig,
   hasUnescapedExpression,
   SEMVER_RELEASE_TAG_REGEX,
 } from '../tools/check-workflows.mjs';
-import { packageAssets } from '../tools/package-assets.mjs';
+import { packageAssets, resolveNpmCommand } from '../tools/package-assets.mjs';
 import {
   assertSafeWriteTarget,
-  assertValidMtimeOption,
   isDirectCli,
   isSameOrSubpath,
   parseCliOutDir,
@@ -304,7 +304,13 @@ ${gprPublishLine}
       - name: Install dependencies
         run: npm ci --ignore-scripts
       - name: Package release asset bundles
-        run: node tools/package-assets.mjs
+        run: |
+          node tools/package-assets.mjs
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "::error::Working tree is dirty after packaging release assets:"
+            git status --porcelain
+            exit 1
+          fi
       - name: Attest Build Provenance
         uses: actions/attest@${SHA_ATTEST}
         with:
@@ -955,19 +961,13 @@ test('path-jail: symlink escape outside jail root is rejected', () => {
   }
 });
 
-test('path-jail: parseCliOutDir, assertValidMtimeOption, stripWin32DeviceNamespacePrefix, isSameOrSubpath, and isDirectCli', () => {
+test('path-jail: parseCliOutDir, stripWin32DeviceNamespacePrefix, isSameOrSubpath, and isDirectCli', () => {
   assert.equal(parseCliOutDir([]), undefined);
   assert.equal(parseCliOutDir(['--other', 'val']), undefined);
   assert.equal(parseCliOutDir(['--outDir', 'dist/assets']), 'dist/assets');
   assert.equal(parseCliOutDir(['--outdir=dist/custom']), 'dist/custom');
   assert.throws(() => parseCliOutDir(['--outDir']), /missing or empty directory argument/);
   assert.throws(() => parseCliOutDir(['--outDir=']), /value cannot be empty/);
-
-  assert.throws(() => assertValidMtimeOption(null), /Invalid options/);
-  assert.throws(() => assertValidMtimeOption({ mtime: 'bad' }), /Invalid mtime/);
-  const fixedDate = new Date('2026-01-01T00:00:00Z');
-  assert.equal(assertValidMtimeOption({ mtime: fixedDate }), fixedDate);
-  assert.equal(assertValidMtimeOption({}), undefined);
 
   assert.equal(stripWin32DeviceNamespacePrefix('\\\\?\\C:\\repo\\dist'), 'C:\\repo\\dist');
   assert.equal(stripWin32DeviceNamespacePrefix('\\\\?\\UNC\\server\\share\\file'), '\\\\server\\share\\file');
@@ -1038,4 +1038,304 @@ test('packageAssets and tools/package-assets.mjs CLI fail closed on invalid inpu
   const missingOutDir = spawnSync(process.execPath, [pkgAssetsCli, '--outDir'], { encoding: 'utf8' });
   assert.notEqual(missingOutDir.status, 0);
   assert.match(missingOutDir.stderr, /missing or empty directory argument/);
+});
+
+function listTgzEntries(tgzPath) {
+  const tarBuf = gunzipSync(readFileSync(tgzPath));
+  const entries = [];
+  let offset = 0;
+  while (offset + 512 <= tarBuf.length) {
+    const header = tarBuf.subarray(offset, offset + 512);
+    if (header.every((b) => b === 0)) {
+      break;
+    }
+    const rawName = header.subarray(0, 100).toString('utf8').replace(/\0.*$/, '');
+    const rawPrefix = header.subarray(345, 500).toString('utf8').replace(/\0.*$/, '');
+    const fullName = rawPrefix ? `${rawPrefix}/${rawName}` : rawName;
+    const sizeOctal = header.subarray(124, 136).toString('utf8').replace(/\0.*$/, '').trim();
+    const size = sizeOctal ? parseInt(sizeOctal, 8) : 0;
+    entries.push(fullName);
+    offset += 512 + Math.ceil(size / 512) * 512;
+  }
+  return entries;
+}
+
+test('packageAssets default dist/ back-to-back runs (N=1, N=2) never self-include assets or SHA256SUMS.txt', () => {
+  for (const filesField of [['dist'], ['dist/**/*.d.ts']]) {
+    withTempGithubFixture(
+      {
+        'package.json': JSON.stringify({
+          name: '@fixture/pkg',
+          version: '1.0.0',
+          files: filesField,
+        }),
+        LICENSE: 'MIT\n',
+        'dist/index.d.ts': 'export declare const ok: true;\n',
+        'dist/sub/nested.d.ts': 'export type Nested = string;\n',
+      },
+      (tempRoot) => {
+        const first = packageAssets({ rootDir: tempRoot });
+        assert.equal(existsSync(first.tarballPath), true);
+        assert.equal(existsSync(first.sha256SumsPath), true);
+
+        const second = packageAssets({ rootDir: tempRoot });
+        assert.equal(existsSync(second.tarballPath), true);
+        assert.equal(existsSync(second.sha256SumsPath), true);
+
+        const entries = listTgzEntries(second.tarballPath);
+        assert.ok(entries.includes('package/dist/index.d.ts'), `Missing dist/index.d.ts in ${entries.join(', ')}`);
+        assert.ok(
+          entries.includes('package/dist/sub/nested.d.ts'),
+          `Missing dist/sub/nested.d.ts in ${entries.join(', ')}`,
+        );
+        assert.equal(
+          entries.some((e) => e.includes('dist/assets/') || e.endsWith('.tgz') || e.includes('SHA256SUMS.txt')),
+          false,
+          `Unexpected self-included asset entries in packed .tgz: ${entries.join(', ')}`,
+        );
+      },
+    );
+  }
+});
+
+test('packageAssets enforces dist/ path-jail confinement and resolves relative outDir against targetRoot', () => {
+  assert.throws(
+    () => packageAssets({ outDir: join(root, '..foo') }),
+    /refusing to write outside allowed jail boundary/,
+  );
+
+  withTempGithubFixture(
+    {
+      'package.json': JSON.stringify({ name: '@fixture/jail', version: '1.0.0', files: ['dist/**/*.d.ts'] }),
+      LICENSE: 'MIT\n',
+      'dist/index.d.ts': 'export {};\n',
+    },
+    (tempRoot) => {
+      assert.throws(
+        () => packageAssets({ rootDir: tempRoot, outDir: join(tempRoot, '..foo') }),
+        /refusing to write outside allowed jail boundary/,
+      );
+      assert.throws(
+        () => packageAssets({ rootDir: tempRoot, outDir: '..foo' }),
+        /refusing to write outside allowed jail boundary/,
+      );
+
+      // Relative --outDir dist with --root <fixture> from a different CWD must succeed
+      const pkgAssetsCli = join(root, 'tools', 'package-assets.mjs');
+      const cliPass = spawnSync(process.execPath, [pkgAssetsCli, '--root', tempRoot, '--outDir', 'dist'], {
+        cwd: root,
+        encoding: 'utf8',
+      });
+      assert.equal(cliPass.status, 0, `Expected CLI --root <dir> --outDir dist to pass, stderr: ${cliPass.stderr}`);
+      assert.equal(existsSync(join(tempRoot, 'dist', 'SHA256SUMS.txt')), true);
+
+      const cliFail = spawnSync(process.execPath, [pkgAssetsCli, '--root', tempRoot, '--outDir', '..foo'], {
+        cwd: root,
+        encoding: 'utf8',
+      });
+      assert.notEqual(cliFail.status, 0);
+      assert.match(cliFail.stderr, /refusing to write outside allowed jail boundary/);
+    },
+  );
+});
+
+test('resolveNpmCommand rejects non-npm npm_execpath (pnpm/yarn) and accepts npm-cli.js', () => {
+  withTempGithubFixture(
+    {
+      'pnpm.cjs': '// mock pnpm\n',
+      'yarn.js': '// mock yarn\n',
+      'npm-cli.js': '// mock npm\n',
+    },
+    (tempRoot) => {
+      const prevExecPath = process.env.npm_execpath;
+      try {
+        for (const bogus of ['pnpm.cjs', 'yarn.js']) {
+          const bogusPath = join(tempRoot, bogus);
+          process.env.npm_execpath = bogusPath;
+          const inv = resolveNpmCommand(['pack']);
+          assert.notEqual(inv.args[0], bogusPath, `Expected resolveNpmCommand to ignore ${bogus}`);
+        }
+
+        const validNpmCli = join(tempRoot, 'npm-cli.js');
+        process.env.npm_execpath = validNpmCli;
+        const validInv = resolveNpmCommand(['pack']);
+        assert.equal(validInv.command, process.execPath);
+        assert.deepEqual(validInv.args, [validNpmCli, 'pack']);
+      } finally {
+        if (prevExecPath === undefined) {
+          delete process.env.npm_execpath;
+        } else {
+          process.env.npm_execpath = prevExecPath;
+        }
+      }
+    },
+  );
+});
+
+test('auditWorkflows enforces Gate 0 AST invariants (permissions types, attest subjects/order, required jobs/files, privileged npm install)', () => {
+  const baseCi = buildCompliantCiYml();
+  const baseRelease = buildCompliantReleaseYml();
+  const baseZizmor = buildMatchingZizmorYml(baseRelease);
+
+  // 1. Non-object permissions (arrays, booleans, arbitrary strings) on root and job
+  for (const badPerm of ['[]', 'true', '123']) {
+    withTempGithubFixture(
+      {
+        '.github/workflows/ci.yml': baseCi.replace('permissions:\n  contents: read', `permissions: ${badPerm}`),
+      },
+      (dir) => {
+        const res = auditWorkflows(dir);
+        assert.equal(res.ok, false);
+        assert.ok(res.violations.some((v) => v.includes('top-level permissions must be an object')));
+      },
+    );
+  }
+
+  for (const badJobPerm of ['[]', 'true', 'read-all', 'bogus']) {
+    withTempGithubFixture(
+      {
+        '.github/workflows/ci.yml': baseCi.replace(
+          '    permissions:\n      contents: read\n    strategy:',
+          `    permissions: ${badJobPerm}\n    strategy:`,
+        ),
+      },
+      (dir) => {
+        const res = auditWorkflows(dir);
+        assert.equal(res.ok, false);
+        assert.ok(res.violations.some((v) => v.includes('permissions must be an explicit scope object')));
+      },
+    );
+  }
+
+  // 2. release.yml verify job omitted permissions
+  withTempGithubFixture(
+    {
+      '.github/workflows/release.yml': baseRelease.replace(
+        '  verify:\n    needs: [tag-guard]\n    permissions:\n      contents: read\n      security-events: write\n',
+        '  verify:\n    needs: [tag-guard]\n',
+      ),
+    },
+    (dir) => {
+      const res = auditWorkflows(dir);
+      assert.equal(res.ok, false);
+      assert.ok(res.violations.some((v) => v.includes('verify job must declare exact permissions')));
+    },
+  );
+
+  // 3. Missing publish-gpr or attach-assets in release.yml
+  withTempGithubFixture(
+    {
+      '.github/workflows/release.yml': baseRelease.replace(/  publish-gpr:[\s\S]*?(?=  attach-assets:)/, ''),
+    },
+    (dir) => {
+      const res = auditWorkflows(dir);
+      assert.equal(res.ok, false);
+      assert.ok(res.violations.some((v) => v.includes("missing 'publish-gpr' job")));
+    },
+  );
+
+  withTempGithubFixture(
+    {
+      '.github/workflows/release.yml': baseRelease.replace(/  attach-assets:[\s\S]*?(?=  notify:)/, ''),
+    },
+    (dir) => {
+      const res = auditWorkflows(dir);
+      assert.equal(res.ok, false);
+      assert.ok(res.violations.some((v) => v.includes("missing 'attach-assets' job")));
+    },
+  );
+
+  // 4. REQUIRED_RELEASE_ATTEST_SUBJECTS mismatch & attach-assets step ordering
+  withTempGithubFixture(
+    {
+      '.github/workflows/release.yml': baseRelease.replace(
+        '          subject-path: |\n            dist/assets/*.tgz\n            dist/SHA256SUMS.txt\n            LICENSE',
+        '          subject-path: README.md',
+      ),
+    },
+    (dir) => {
+      const res = auditWorkflows(dir);
+      assert.equal(res.ok, false);
+      assert.ok(res.violations.some((v) => v.includes('missing required subject-path entries')));
+    },
+  );
+
+  withTempGithubFixture(
+    {
+      '.github/workflows/release.yml': baseRelease.replace(
+        /      - name: Package release asset bundles[\s\S]*?      - name: Attest Build Provenance\n        uses: actions\/attest@[^\n]+\n        with:\n          subject-path: \|\n            dist\/assets\/\*\.tgz\n            dist\/SHA256SUMS\.txt\n            LICENSE\n          create-storage-record: false\n/,
+        `      - name: Attest Build Provenance
+        uses: actions/attest@${SHA_ATTEST}
+        with:
+          subject-path: |
+            dist/assets/*.tgz
+            dist/SHA256SUMS.txt
+            LICENSE
+          create-storage-record: false
+      - name: Package release asset bundles
+        run: node tools/package-assets.mjs
+`,
+      ),
+    },
+    (dir) => {
+      const res = auditWorkflows(dir);
+      assert.equal(res.ok, false);
+      assert.ok(res.violations.some((v) => v.includes('attach-assets steps must execute in order')));
+    },
+  );
+
+  // 5. Canonical workflow set enforcement (require ci.yml + release.yml, forbid publish.yml)
+  withTempGithubFixture({ '.github/workflows/ci.yml': baseCi }, (dir) => {
+    const res = auditWorkflows(dir, { requireCanonicalWorkflows: true });
+    assert.equal(res.ok, false);
+    assert.ok(res.violations.some((v) => v.includes("Missing required canonical workflow 'release.yml'")));
+  });
+
+  withTempGithubFixture(
+    {
+      '.github/workflows/ci.yml': baseCi,
+      '.github/workflows/release.yml': baseRelease,
+      '.github/workflows/publish.yml': baseRelease,
+      '.github/zizmor.yml': baseZizmor,
+    },
+    (dir) => {
+      const res = auditWorkflows(dir, { requireCanonicalWorkflows: true });
+      assert.equal(res.ok, false);
+      assert.ok(res.violations.some((v) => v.includes("Forbidden legacy workflow 'publish.yml'")));
+    },
+  );
+
+  // 6. Privileged npm install / npm i / npm add without --ignore-scripts in publish-gpr / attach-assets
+  for (const installCmd of ['npm install', 'npm i', 'npm add some-pkg']) {
+    withTempGithubFixture(
+      {
+        '.github/workflows/release.yml': baseRelease.replace(
+          '      - name: Install dependencies\n        run: npm ci --ignore-scripts\n      - name: Publish to GitHub Packages',
+          `      - name: Install dependencies\n        run: ${installCmd}\n      - name: Publish to GitHub Packages`,
+        ),
+      },
+      (dir) => {
+        const res = auditWorkflows(dir);
+        assert.equal(res.ok, false);
+        assert.ok(res.violations.some((v) => v.includes("must pass '--ignore-scripts' to 'npm ")));
+      },
+    );
+  }
+});
+
+test('ci-local.ps1 leak regexes match nested as well as root agent/scratch paths', () => {
+  const ps1 = readFileSync(ciScriptPath, 'utf8');
+  const trackedMatch = ps1.match(/\$TrackedLeakPattern\s*=\s*'([^']+)'/);
+  const untrackedMatch = ps1.match(/\$UntrackedLeakPattern\s*=\s*'([^']+)'/);
+  assert.ok(trackedMatch, 'Expected $TrackedLeakPattern in ci-local.ps1');
+  assert.ok(untrackedMatch, 'Expected $UntrackedLeakPattern in ci-local.ps1');
+
+  const trackedRe = new RegExp(trackedMatch[1]);
+  const untrackedRe = new RegExp(untrackedMatch[1]);
+  for (const nestedLeak of ['AGENTS.md', 'sub/AGENTS.md', 'packages/a/.agents/rules.md', 'sub/docs/learnings/x.md']) {
+    assert.equal(trackedRe.test(nestedLeak), true, `Expected $TrackedLeakPattern to match ${nestedLeak}`);
+    assert.equal(untrackedRe.test(nestedLeak), true, `Expected $UntrackedLeakPattern to match ${nestedLeak}`);
+  }
+  assert.equal(trackedRe.test('sub/.ci-local/receipt.json'), true);
+  assert.equal(untrackedRe.test('.ci-local/receipt.json'), false);
 });

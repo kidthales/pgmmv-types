@@ -21,6 +21,8 @@ lerna-debug.log*
 
 node_modules
 dist-ssr
+dist/assets/
+dist/SHA256SUMS.txt
 *.local
 
 # Local CI receipts and history

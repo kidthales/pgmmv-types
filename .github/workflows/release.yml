@@ -207,7 +207,13 @@ jobs:
         run: npm ci --ignore-scripts
 
       - name: Package release asset bundles
-        run: node tools/package-assets.mjs
+        run: |
+          node tools/package-assets.mjs
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "::error::Working tree is dirty after packaging release assets:"
+            git status --porcelain
+            exit 1
+          fi
 
       - name: Attest Build Provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2

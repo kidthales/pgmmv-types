@@ -123,57 +123,62 @@ export function isSameOrSubpath(targetPath, basePath) {
 }
 
 /**
- * Validates an optional `mtime` property on an options object.
- */
-export function assertValidMtimeOption(opts) {
-  if (opts === null || typeof opts !== 'object') {
-    throw new Error('Invalid options: must be an object');
-  }
-  if ('mtime' in opts) {
-    if (!(opts.mtime instanceof Date) || Number.isNaN(opts.mtime.getTime())) {
-      throw new Error('Invalid mtime: must be a valid Date instance');
-    }
-    return opts.mtime;
-  }
-  return undefined;
-}
-
-/**
- * Validates and confines target output directory within allowed boundary (defaulting to repository root).
+ * Validates and confines target output directory within allowed boundary (defaulting to rootDir or repository root).
  * Strictly rejects protected internal repository paths and out-of-boundary locations.
  */
 export function resolveOutDir(opts = {}) {
-  if (opts === null || typeof opts !== 'object') {
+  if (opts === null || typeof opts !== 'object' || Array.isArray(opts)) {
     throw new Error('Invalid outDir: options must be an object');
   }
-  const rawOutDir = 'outDir' in opts ? opts.outDir : distDir;
+  if ('rootDir' in opts && opts.rootDir !== undefined && (typeof opts.rootDir !== 'string' || opts.rootDir.trim() === '')) {
+    throw new Error('Invalid rootDir: must be a non-empty string path');
+  }
+  if (
+    'allowedRoot' in opts &&
+    opts.allowedRoot !== undefined &&
+    (typeof opts.allowedRoot !== 'string' || opts.allowedRoot.trim() === '')
+  ) {
+    throw new Error('Invalid allowedRoot: must be a non-empty string path');
+  }
+
+  const effectiveRoot = opts.rootDir ? resolveRealPath(opts.rootDir) : root;
+  const effectiveDistDir = join(effectiveRoot, 'dist');
+  const rawOutDir = 'outDir' in opts ? opts.outDir : effectiveDistDir;
   if (typeof rawOutDir !== 'string' || rawOutDir.trim() === '') {
     throw new Error('Invalid outDir: must be a non-empty string path');
   }
 
-  const boundary = opts.allowedRoot || root;
-  const resolved = resolveRealPath(rawOutDir);
+  const boundary = opts.allowedRoot ? resolveRealPath(opts.allowedRoot) : effectiveRoot;
+  const candidateOutDir = resolve(effectiveRoot, normalizePlatformPath(rawOutDir));
+  const resolved = resolveRealPath(candidateOutDir);
 
   if (!isSameOrSubpath(resolved, boundary)) {
     throw new Error(`Invalid outDir: refusing to write outside allowed jail boundary (${resolved})`);
   }
 
-  if (isSameOrSubpath(resolved, root)) {
-    if (
-      isSameOrSubpath(resolved, libDir) ||
-      isSameOrSubpath(resolved, toolsDir) ||
-      isSameOrSubpath(resolved, testsDir) ||
-      isSameOrSubpath(resolved, testDir) ||
-      isSameOrSubpath(resolved, join(root, '.github')) ||
-      isSameOrSubpath(resolved, join(root, 'scripts')) ||
-      isSameOrSubpath(resolved, join(root, '.git')) ||
-      isSameOrSubpath(root, resolved)
-    ) {
-      throw new Error(`Invalid outDir: refusing to write to protected path ${resolved}`);
+  const protectedRoots = [root];
+  if (normCase(effectiveRoot) !== normCase(root)) {
+    protectedRoots.push(effectiveRoot);
+  }
+  for (const baseRoot of protectedRoots) {
+    if (isSameOrSubpath(resolved, baseRoot)) {
+      if (
+        isSameOrSubpath(resolved, join(baseRoot, 'lib')) ||
+        isSameOrSubpath(resolved, join(baseRoot, 'tools')) ||
+        isSameOrSubpath(resolved, join(baseRoot, 'tests')) ||
+        isSameOrSubpath(resolved, join(baseRoot, 'test')) ||
+        isSameOrSubpath(resolved, join(baseRoot, '.github')) ||
+        isSameOrSubpath(resolved, join(baseRoot, 'scripts')) ||
+        isSameOrSubpath(resolved, join(baseRoot, '.git')) ||
+        isSameOrSubpath(baseRoot, resolved)
+      ) {
+        throw new Error(`Invalid outDir: refusing to write to protected path ${resolved}`);
+      }
     }
-    if (!opts.allowedRoot && !isSameOrSubpath(resolved, distDir)) {
-      throw new Error(`Invalid outDir: refusing to write outside allowed jail boundary (${resolved})`);
-    }
+  }
+
+  if (!opts.allowedRoot && !isSameOrSubpath(resolved, effectiveDistDir)) {
+    throw new Error(`Invalid outDir: refusing to write outside allowed jail boundary (${resolved})`);
   }
 
   return resolved;

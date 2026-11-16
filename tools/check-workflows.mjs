@@ -83,9 +83,10 @@ function checkNpmCiIgnoreScripts(step, stepLabel, permDesc, violations) {
   for (const rawLine of step.run.split(/\r?\n/)) {
     const line = rawLine.trim();
     if (!line || line.startsWith('#')) continue;
-    if (/\bnpm\s+ci\b/.test(line) && !/(?:^|\s)--ignore-scripts(?=\s|$)/.test(line)) {
+    const match = line.match(/\bnpm\s+(ci|install|i|add)\b/);
+    if (match && !/(?:^|\s)--ignore-scripts(?=\s|$)/.test(line)) {
       violations.push(
-        `${stepLabel} must pass '--ignore-scripts' to 'npm ci' so dependency lifecycle scripts cannot execute with ${permDesc}`,
+        `${stepLabel} must pass '--ignore-scripts' to 'npm ${match[1]}' so dependency lifecycle scripts cannot execute with ${permDesc}`,
       );
     }
   }
@@ -341,6 +342,34 @@ function isAuthorizedJobWrite(fileName, jobId, scope) {
   return false;
 }
 
+function validateJobPermissions(wfName, jobId, perms, violations) {
+  if (typeof perms === 'string') {
+    if (perms === 'write-all') {
+      violations.push(`${wfName}: job '${jobId}' has unauthorized write-all permissions`);
+    } else {
+      violations.push(
+        `${wfName}: job '${jobId}' permissions must be an explicit scope object (got ${JSON.stringify(perms)})`,
+      );
+    }
+    return;
+  }
+  if (!perms || typeof perms !== 'object' || Array.isArray(perms)) {
+    violations.push(
+      `${wfName}: job '${jobId}' permissions must be an explicit scope object (got ${JSON.stringify(perms)})`,
+    );
+    return;
+  }
+  for (const [scope, level] of Object.entries(perms)) {
+    if (level !== 'read' && level !== 'write' && level !== 'none') {
+      violations.push(
+        `${wfName}: job '${jobId}' has invalid permission level '${String(level)}' for scope '${scope}'`,
+      );
+    } else if (level === 'write' && !isAuthorizedJobWrite(wfName, jobId, scope)) {
+      violations.push(`${wfName}: job '${jobId}' has unauthorized write permission for scope '${scope}'`);
+    }
+  }
+}
+
 function validateUsesTarget(wfName, contextLabel, rawTarget, violations) {
   const target = String(rawTarget).trim();
   if (target.startsWith('$')) {
@@ -432,6 +461,18 @@ export function auditWorkflows(targetPath, options = {}) {
   }
 
   const isRootWorkflows = resolveReal(workflowsDir).toLowerCase() === resolveReal(defaultRootWorkflows).toLowerCase();
+  const wfNames = new Set(wfFiles.map((f) => basename(f)));
+  if (isRootWorkflows || opts.requireCanonicalWorkflows) {
+    if (!wfNames.has('ci.yml')) {
+      violations.push("Missing required canonical workflow 'ci.yml'");
+    }
+    if (!wfNames.has('release.yml')) {
+      violations.push("Missing required canonical workflow 'release.yml'");
+    }
+    if (wfNames.has('publish.yml') || wfNames.has('publish.yaml')) {
+      violations.push("Forbidden legacy workflow 'publish.yml' must remain deleted");
+    }
+  }
 
   for (const wfPath of wfFiles) {
     const wfName = basename(wfPath);
@@ -470,6 +511,10 @@ export function auditWorkflows(targetPath, options = {}) {
           `${wfName}: top-level permissions must be strictly '{ contents: read }' (got ${JSON.stringify(doc.permissions)})`,
         );
       }
+    } else {
+      violations.push(
+        `${wfName}: top-level permissions must be an object '{ contents: read }' (got ${JSON.stringify(doc.permissions)})`,
+      );
     }
 
     const jobs = doc.jobs && typeof doc.jobs === 'object' && !Array.isArray(doc.jobs) ? doc.jobs : {};
@@ -498,29 +543,13 @@ export function auditWorkflows(targetPath, options = {}) {
 
       // 3. Job permissions check (must be explicitly declared on step-executing jobs, zero unauthorized writes)
       if (hasSteps) {
-        if (!job.permissions) {
+        if (!Object.hasOwn(job, 'permissions') || job.permissions === undefined || job.permissions === null) {
           violations.push(`${wfName}: job '${jobId}' missing explicit job-level permissions block`);
-        } else if (typeof job.permissions === 'string') {
-          if (job.permissions === 'write-all') {
-            violations.push(`${wfName}: job '${jobId}' has unauthorized write-all permissions`);
-          }
-        } else if (typeof job.permissions === 'object' && !Array.isArray(job.permissions)) {
-          for (const [scope, level] of Object.entries(job.permissions)) {
-            if (level === 'write' && !isAuthorizedJobWrite(wfName, jobId, scope)) {
-              violations.push(`${wfName}: job '${jobId}' has unauthorized write permission for scope '${scope}'`);
-            }
-          }
+        } else {
+          validateJobPermissions(wfName, jobId, job.permissions, violations);
         }
-      } else if (job.permissions) {
-        if (job.permissions === 'write-all') {
-          violations.push(`${wfName}: job '${jobId}' has unauthorized write-all permissions`);
-        } else if (typeof job.permissions === 'object' && !Array.isArray(job.permissions)) {
-          for (const [scope, level] of Object.entries(job.permissions)) {
-            if (level === 'write' && !isAuthorizedJobWrite(wfName, jobId, scope)) {
-              violations.push(`${wfName}: job '${jobId}' has unauthorized write permission for scope '${scope}'`);
-            }
-          }
-        }
+      } else if (Object.hasOwn(job, 'permissions')) {
+        validateJobPermissions(wfName, jobId, job.permissions, violations);
       }
 
       // Job-level reusable workflow call check
@@ -740,6 +769,20 @@ export function auditWorkflows(targetPath, options = {}) {
       if (!jobs.verify) {
         violations.push(`${wfName}: missing 'verify' job delegation`);
       } else {
+        const vPerms = jobs.verify.permissions;
+        const vKeys = vPerms && typeof vPerms === 'object' && !Array.isArray(vPerms) ? Object.keys(vPerms) : [];
+        if (
+          !vPerms ||
+          typeof vPerms !== 'object' ||
+          Array.isArray(vPerms) ||
+          vKeys.length !== 2 ||
+          vPerms.contents !== 'read' ||
+          vPerms['security-events'] !== 'write'
+        ) {
+          violations.push(
+            `${wfName}: verify job must declare exact permissions { contents: read, security-events: write }`,
+          );
+        }
         const needs = Array.isArray(jobs.verify.needs) ? jobs.verify.needs : [jobs.verify.needs];
         if (!needs.includes('tag-guard')) {
           violations.push(`${wfName}: verify job must declare needs: [tag-guard]`);
@@ -783,9 +826,8 @@ export function auditWorkflows(targetPath, options = {}) {
 
       for (const pubJob of ['publish-npm', 'publish-gpr', 'attach-assets']) {
         const j = jobs[pubJob];
-        if (!j && pubJob !== 'publish-npm') continue;
         if (!j) {
-          violations.push(`${wfName}: missing 'publish-npm' job`);
+          violations.push(`${wfName}: missing '${pubJob}' job`);
           continue;
         }
         const jNeeds = Array.isArray(j.needs) ? j.needs : [j.needs];
@@ -824,9 +866,44 @@ export function auditWorkflows(targetPath, options = {}) {
           );
         }
         const aaSteps = Array.isArray(jobs['attach-assets'].steps) ? jobs['attach-assets'].steps : [];
-        const hasAttestation = aaSteps.some((s) => s.uses && s.uses.startsWith('actions/attest@'));
-        if (!hasAttestation) {
+        const pkgIdx = aaSteps.findIndex(
+          (s) => s && typeof s === 'object' && typeof s.run === 'string' && /\bnode\s+tools\/package-assets\.mjs\b/.test(s.run),
+        );
+        const attestIdx = aaSteps.findIndex((s) => s && typeof s === 'object' && s.uses && s.uses.startsWith('actions/attest@'));
+        const uploadIdx = aaSteps.findIndex(
+          (s) => s && typeof s === 'object' && typeof s.run === 'string' && /\bgh\s+release\s+upload\b/.test(s.run),
+        );
+
+        if (pkgIdx < 0) {
+          violations.push(`${wfName}: attach-assets job missing 'node tools/package-assets.mjs' packaging step`);
+        }
+        if (attestIdx < 0) {
           violations.push(`${wfName}: attach-assets job missing actions/attest step`);
+        } else {
+          const rawSubjectPath = aaSteps[attestIdx].with?.['subject-path'];
+          const subjectEntries = Array.isArray(rawSubjectPath)
+            ? rawSubjectPath.map((entry) => String(entry).trim()).filter(Boolean)
+            : typeof rawSubjectPath === 'string'
+              ? rawSubjectPath
+                  .split(/\r?\n/)
+                  .map((line) => line.trim())
+                  .filter(Boolean)
+              : [];
+          const subjectSet = new Set(subjectEntries);
+          const missingSubjects = REQUIRED_RELEASE_ATTEST_SUBJECTS.filter((subj) => !subjectSet.has(subj));
+          if (missingSubjects.length > 0) {
+            violations.push(
+              `${wfName}: attach-assets actions/attest step missing required subject-path entries: ${missingSubjects.join(', ')}`,
+            );
+          }
+        }
+        if (uploadIdx < 0) {
+          violations.push(`${wfName}: attach-assets job missing 'gh release upload' step`);
+        }
+        if (pkgIdx >= 0 && attestIdx >= 0 && uploadIdx >= 0 && !(pkgIdx < attestIdx && attestIdx < uploadIdx)) {
+          violations.push(
+            `${wfName}: attach-assets steps must execute in order: package-assets.mjs -> actions/attest -> gh release upload`,
+          );
         }
       }
 

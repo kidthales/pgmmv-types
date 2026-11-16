@@ -239,8 +239,8 @@ try {
     $GateResults["gate1_action_pins"] = "pass"
 
     $GateResults["gate1_agent_leaks"] = "fail"
-    $TrackedLeakPattern = '^(\.agents?/|\.gemini/|\.ai/|\.cursor/|\.claude/|\.ci-local/|scratch/|docs/learnings/|AGENTS\.md$|GEMINI\.md$|CLAUDE\.md$)'
-    $UntrackedLeakPattern = '^(\.agents?/|\.gemini/|\.ai/|\.cursor/|\.claude/|scratch/|docs/learnings/|AGENTS\.md$|GEMINI\.md$|CLAUDE\.md$)'
+    $TrackedLeakPattern = '(^|/)(\.agents?/|\.gemini/|\.ai/|\.cursor/|\.claude/|\.ci-local/|scratch/|docs/learnings/|(AGENTS|GEMINI|CLAUDE)\.md$)'
+    $UntrackedLeakPattern = '(^|/)(\.agents?/|\.gemini/|\.ai/|\.cursor/|\.claude/|scratch/|docs/learnings/|(AGENTS|GEMINI|CLAUDE)\.md$)'
 
     $TrackedFiles = @(& git ls-files)
     if ($LASTEXITCODE -ne 0) {
