@@ -167,7 +167,8 @@ npm install
 npm run generate     # Emit node16-clean .d.ts files into dist/ and validate node16 resolution
 npm run check:types  # Type-check bundler and node16 consumer fixtures
 npm run lint         # Run root tsc --noEmit, check:types, and tools/lint.mjs
-npm test             # Run npm run lint and node --test (tests/types.test.mjs, tests/tools.test.mjs)
+npm test             # Run npm run lint and node --test (tests/types.test.mjs, tests/tools.test.mjs, tests/ci.test.mjs)
+npm run ci:local     # Run the full local Gate 0-4 CI suite via pwsh ./scripts/ci-local.ps1
 ```
 
 ---

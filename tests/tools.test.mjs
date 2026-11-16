@@ -6,7 +6,12 @@ import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { auditEs5Fixture, auditLockfileVersion, auditPackageExports, auditTrackedHygiene } from '../tools/lint.mjs';
-import { generateDeclarations, rewriteDeclarationSpecifiers, validateOutDir } from '../tools/generate.mjs';
+import {
+  generateDeclarations,
+  isPackagedDistArtifact,
+  rewriteDeclarationSpecifiers,
+  validateOutDir
+} from '../tools/generate.mjs';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -313,7 +318,7 @@ test('dist/ contains only .d.ts files with byte-for-byte parity against lib/**/*
     .filter((f) => f.endsWith('.ts'))
     .map((f) => relative(libDir, f).replace(/\.ts$/, '.d.ts'))
     .sort();
-  const distFiles = collectFiles(distDir);
+  const distFiles = collectFiles(distDir).filter((f) => !isPackagedDistArtifact(relative(distDir, f)));
 
   const nonDts = distFiles.filter((f) => !f.endsWith('.d.ts'));
   assert.deepEqual(nonDts, [], `Expected zero non-.d.ts files in dist/, found: ${nonDts.join(', ')}`);
@@ -358,6 +363,42 @@ test('generateDeclarations --check detects content drift, missing files, and ext
     assert.throws(
       () => generateDeclarations({ rootDir: dir, check: true }),
       /Unexpected non-\.d\.ts file\(s\) in dist\//
+    );
+
+    rmSync(join(dir, 'dist', 'extra.js'));
+    mkdirSync(join(dir, 'dist', 'assets'), { recursive: true });
+    writeFileSync(join(dir, 'dist', 'SHA256SUMS.txt'), 'deadbeef  LICENSE\n', 'utf8');
+    writeFileSync(join(dir, 'dist', 'assets', 'fixture-1.0.0.tgz'), 'tgz\n', 'utf8');
+    assert.equal(generateDeclarations({ rootDir: dir, check: true }).checked, true);
+
+    mkdirSync(join(dir, 'dist', 'sub'), { recursive: true });
+    writeFileSync(join(dir, 'dist', 'sub', 'SHA256SUMS.txt'), 'deadbeef  LICENSE\n', 'utf8');
+    assert.throws(
+      () => generateDeclarations({ rootDir: dir, check: true }),
+      /Unexpected non-\.d\.ts file\(s\) in dist\//
+    );
+    rmSync(join(dir, 'dist', 'sub'), { recursive: true, force: true });
+
+    const outsideTarget = join(dir, 'outside.txt');
+    writeFileSync(outsideTarget, 'escape\n', 'utf8');
+    try {
+      symlinkSync(outsideTarget, join(dir, 'dist', 'assets', 'escape.tgz'), 'file');
+      assert.throws(
+        () => generateDeclarations({ rootDir: dir, check: true }),
+        /Unexpected symlink in dist\//
+      );
+      rmSync(join(dir, 'dist', 'assets', 'escape.tgz'));
+    } catch (err) {
+      if (err?.code !== 'EPERM' && err?.code !== 'EACCES') {
+        throw err;
+      }
+    }
+
+    generateDeclarations({ rootDir: dir, outDir: 'custom-dist' });
+    writeFileSync(join(dir, 'custom-dist', 'SHA256SUMS.txt'), 'deadbeef  LICENSE\n', 'utf8');
+    assert.throws(
+      () => generateDeclarations({ rootDir: dir, outDir: 'custom-dist', check: true }),
+      /Unexpected non-\.d\.ts file\(s\) in custom-dist\//
     );
   });
 });
