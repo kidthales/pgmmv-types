@@ -140,7 +140,14 @@ function Write-GateSummary {
 
 Push-Location $RootDir
 try {
-    $NodeVersionRaw = (& node -p "process.versions.node").Trim()
+    $NodeVersionOut = & node -p "process.versions.node"
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to determine Node.js version (node exited with $LASTEXITCODE)."
+    }
+    $NodeVersionRaw = "$NodeVersionOut".Trim()
+    if ([string]::IsNullOrWhiteSpace($NodeVersionRaw)) {
+        throw "Failed to determine Node.js version (empty output from node)."
+    }
     $NodeVersionCore = ($NodeVersionRaw -split '[-+]')[0]
     if ([System.Version]$NodeVersionCore -lt [System.Version]"22.2.0") {
         throw "Node.js >= 22.2.0 is required; found $NodeVersionRaw."

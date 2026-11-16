@@ -13,6 +13,7 @@ import {
   hasUnescapedExpression,
   SEMVER_RELEASE_TAG_REGEX,
 } from '../tools/check-workflows.mjs';
+import { generateDeclarations } from '../tools/generate.mjs';
 import { packageAssets, resolveNpmCommand } from '../tools/package-assets.mjs';
 import {
   assertSafeWriteTarget,
@@ -739,6 +740,63 @@ test('auditWorkflows enforces ci.yml architectural contracts', () => {
       assert.ok(res.violations.some((v) => v.includes("does not invoke './scripts/ci-local.ps1 -CI'")));
     },
   );
+
+  // Null or omitted pull_request trigger must still fail branch coverage check
+  withTempGithubFixture(
+    {
+      '.github/workflows/ci.yml': baseCi.replace("  pull_request:\n    branches: [main, 'src-*/epic/**']\n", '  pull_request: ~\n'),
+    },
+    (dir) => {
+      const res = auditWorkflows(dir);
+      assert.equal(res.ok, false);
+      assert.ok(res.violations.some((v) => v.includes("'on.pull_request.branches' must include 'main' and 'src-*/epic/**'")));
+    },
+  );
+
+  withTempGithubFixture(
+    {
+      '.github/workflows/ci.yml': baseCi.replace("  pull_request:\n    branches: [main, 'src-*/epic/**']\n", ''),
+    },
+    (dir) => {
+      const res = auditWorkflows(dir);
+      assert.equal(res.ok, false);
+      assert.ok(res.violations.some((v) => v.includes("missing 'on.pull_request' trigger")));
+    },
+  );
+
+  // Inline # zizmor: ignore comments in non-release workflows must be rejected
+  withTempGithubFixture(
+    {
+      '.github/workflows/ci.yml': `${baseCi}\n# zizmor: ignore[template-injection]\n`,
+    },
+    (dir) => {
+      const res = auditWorkflows(dir);
+      assert.equal(res.ok, false);
+      assert.ok(res.violations.some((v) => v.includes('ci.yml must not contain inline # zizmor: ignore comments')));
+    },
+  );
+
+  // Symlink entries inside .github/workflows/ must be flagged as Gate 0 violations
+  withTempGithubFixture(
+    {
+      '.github/workflows/ci.yml': baseCi,
+      'rogue.yml': 'name: Rogue\n',
+    },
+    (dir) => {
+      const wfLink = join(dir, '.github', 'workflows', 'extra.yml');
+      try {
+        symlinkSync(join(dir, 'rogue.yml'), wfLink, 'file');
+      } catch (err) {
+        if (err?.code === 'EPERM' || err?.code === 'EACCES') {
+          return;
+        }
+        throw err;
+      }
+      const res = auditWorkflows(dir);
+      assert.equal(res.ok, false);
+      assert.ok(res.violations.some((v) => v.includes('Forbidden symlink entry') && v.includes('extra.yml')));
+    },
+  );
 });
 
 test('auditWorkflows enforces release.yml tokenless OIDC invariants (positive and negative)', () => {
@@ -895,6 +953,38 @@ test('auditZizmorConfig enforces exact release.yml line-pin and self-repository 
     releaseYml,
   );
   assert.ok(badSelfRepo.some((v) => v.includes("rules.self-repository.ignore must equal ['release.yml']")));
+
+  // Extra top-level key, extra rule suppression, disable: true, and missing rule rejection
+  const extraTopKey = auditZizmorConfig(`${zizmorYml}extra: true\n`, releaseYml);
+  assert.ok(extraTopKey.some((v) => v.includes("top-level keys must strictly equal ['rules']")));
+
+  const extraRule = auditZizmorConfig(`${zizmorYml}  unpinned-uses:\n    disable: true\n`, releaseYml);
+  assert.ok(extraRule.some((v) => v.includes("rules keys must strictly equal ['self-repository', 'use-trusted-publishing']")));
+
+  const disabledRule = auditZizmorConfig(
+    zizmorYml.replace('  use-trusted-publishing:\n', '  use-trusted-publishing:\n    disable: true\n'),
+    releaseYml,
+  );
+  assert.ok(disabledRule.some((v) => v.includes("rules.use-trusted-publishing keys must strictly equal ['ignore']")));
+
+  const disabledSelfRepo = auditZizmorConfig(
+    zizmorYml.replace('  self-repository:\n', '  self-repository:\n    disable: true\n'),
+    releaseYml,
+  );
+  assert.ok(disabledSelfRepo.some((v) => v.includes("rules.self-repository keys must strictly equal ['ignore']")));
+
+  // Missing .github/zizmor.yml must fail when requireCanonicalWorkflows is true
+  withTempGithubFixture(
+    {
+      '.github/workflows/ci.yml': buildCompliantCiYml(),
+      '.github/workflows/release.yml': releaseYml,
+    },
+    (dir) => {
+      const res = auditWorkflows(dir, { requireCanonicalWorkflows: true });
+      assert.equal(res.ok, false);
+      assert.ok(res.violations.some((v) => v.includes('Missing required .github/zizmor.yml')));
+    },
+  );
 
   // Gate 0 integration catches .github/zizmor.yml drift
   withTempGithubFixture(
@@ -1096,6 +1186,35 @@ test('packageAssets default dist/ back-to-back runs (N=1, N=2) never self-includ
       },
     );
   }
+});
+
+test('generateDeclarations --check passes immediately after packageAssets on default dist/', () => {
+  withTempGithubFixture(
+    {
+      'package.json': JSON.stringify({
+        name: '@fixture/pkg-check',
+        version: '1.0.0',
+        files: ['dist/**/*.d.ts'],
+      }),
+      LICENSE: 'MIT\n',
+      'lib/index.ts': 'export interface DemoCheck { ok: boolean; }\n',
+    },
+    (tempRoot) => {
+      const linkType = process.platform === 'win32' ? 'junction' : 'dir';
+      symlinkSync(join(root, 'node_modules'), join(tempRoot, 'node_modules'), linkType);
+
+      const genRes = generateDeclarations({ rootDir: tempRoot });
+      assert.equal(genRes.count, 1);
+
+      const packed = packageAssets({ rootDir: tempRoot });
+      assert.equal(existsSync(packed.tarballPath), true);
+      assert.equal(existsSync(packed.sha256SumsPath), true);
+
+      const checkRes = generateDeclarations({ rootDir: tempRoot, check: true });
+      assert.equal(checkRes.checked, true);
+      assert.equal(checkRes.count, 1);
+    },
+  );
 });
 
 test('packageAssets enforces dist/ path-jail confinement and resolves relative outDir against targetRoot', () => {

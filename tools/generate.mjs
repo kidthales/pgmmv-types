@@ -446,9 +446,17 @@ function collectFilesStrict(dirPath, rootLabel) {
   return results;
 }
 
+export function isPackagedDistArtifact(relPath) {
+  const norm = String(relPath).replace(/\\/g, '/');
+  return norm === 'SHA256SUMS.txt' || norm.startsWith('assets/');
+}
+
 function compareDeclarationTrees(expectedDir, actualDir, targetRoot) {
   const relOut = relative(targetRoot, actualDir).replace(/\\/g, '/') || '.';
-  const actualFiles = collectFilesStrict(actualDir, `${relOut}/`);
+  const isDefaultDist = relOut === 'dist';
+  const actualFiles = collectFilesStrict(actualDir, `${relOut}/`).filter(
+    (f) => !(isDefaultDist && isPackagedDistArtifact(relative(actualDir, f)))
+  );
   const nonDts = actualFiles.filter((f) => !f.endsWith('.d.ts'));
   if (nonDts.length > 0) {
     const sample = nonDts

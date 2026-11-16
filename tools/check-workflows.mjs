@@ -250,7 +250,53 @@ export function auditZizmorConfig(zizmorRaw, releaseRaw, violations = []) {
     return violations;
   }
 
-  const trustedIgnore = zizmorDoc?.rules?.['use-trusted-publishing']?.ignore;
+  if (!zizmorDoc || typeof zizmorDoc !== 'object' || Array.isArray(zizmorDoc)) {
+    violations.push('.github/zizmor.yml must be a YAML mapping containing strictly "rules"');
+    return violations;
+  }
+
+  const topKeys = Object.keys(zizmorDoc);
+  if (topKeys.length !== 1 || topKeys[0] !== 'rules') {
+    violations.push(`.github/zizmor.yml top-level keys must strictly equal ['rules'] (got ${JSON.stringify(topKeys)})`);
+    return violations;
+  }
+
+  const rulesObj = zizmorDoc.rules;
+  if (!rulesObj || typeof rulesObj !== 'object' || Array.isArray(rulesObj)) {
+    violations.push(
+      '.github/zizmor.yml rules must be a mapping containing strictly use-trusted-publishing and self-repository',
+    );
+    return violations;
+  }
+
+  const allowedRuleKeys = ['self-repository', 'use-trusted-publishing'];
+  const actualRuleKeys = Object.keys(rulesObj).sort();
+  if (
+    actualRuleKeys.length !== allowedRuleKeys.length ||
+    actualRuleKeys.some((key, idx) => key !== allowedRuleKeys[idx])
+  ) {
+    violations.push(
+      `.github/zizmor.yml rules keys must strictly equal ['self-repository', 'use-trusted-publishing'] (got ${JSON.stringify(Object.keys(rulesObj))})`,
+    );
+    return violations;
+  }
+
+  for (const ruleName of ['use-trusted-publishing', 'self-repository']) {
+    const ruleCfg = rulesObj[ruleName];
+    if (!ruleCfg || typeof ruleCfg !== 'object' || Array.isArray(ruleCfg)) {
+      violations.push(`.github/zizmor.yml rules.${ruleName} must be an object with strictly key 'ignore'`);
+      return violations;
+    }
+    const ruleKeys = Object.keys(ruleCfg);
+    if (ruleKeys.length !== 1 || ruleKeys[0] !== 'ignore') {
+      violations.push(
+        `.github/zizmor.yml rules.${ruleName} keys must strictly equal ['ignore'] (got ${JSON.stringify(ruleKeys)})`,
+      );
+      return violations;
+    }
+  }
+
+  const trustedIgnore = rulesObj['use-trusted-publishing'].ignore;
   if (!Array.isArray(trustedIgnore)) {
     violations.push('.github/zizmor.yml must define rules.use-trusted-publishing.ignore array');
     return violations;
@@ -262,14 +308,14 @@ export function auditZizmorConfig(zizmorRaw, releaseRaw, violations = []) {
     return violations;
   }
 
-  const linePinMatch = String(trustedIgnore[0]).match(/^release\.yml:(\d+)$/);
+  const linePinMatch = typeof trustedIgnore[0] === 'string' ? trustedIgnore[0].match(/^release\.yml:(\d+)$/) : null;
   if (!linePinMatch) {
     violations.push(`.github/zizmor.yml expected release.yml:<line> entry, got '${trustedIgnore[0]}'`);
     return violations;
   }
   const pinnedLineNum = Number(linePinMatch[1]);
 
-  const selfRepoIgnore = zizmorDoc?.rules?.['self-repository']?.ignore;
+  const selfRepoIgnore = rulesObj['self-repository'].ignore;
   if (
     !Array.isArray(selfRepoIgnore) ||
     selfRepoIgnore.length !== 1 ||
@@ -280,8 +326,11 @@ export function auditZizmorConfig(zizmorRaw, releaseRaw, violations = []) {
     );
   }
 
-  if (releaseRaw.includes('# zizmor: ignore')) {
-    violations.push('release.yml must not contain inline # zizmor: ignore comments');
+  if (/#\s*zizmor:\s*ignore\b/i.test(releaseRaw)) {
+    const msg = 'release.yml must not contain inline # zizmor: ignore comments';
+    if (!violations.includes(msg)) {
+      violations.push(msg);
+    }
   }
 
   const releaseLines = releaseRaw.split(/\r?\n/);
@@ -448,13 +497,20 @@ export function auditWorkflows(targetPath, options = {}) {
   }
 
   const entries = readdirSync(workflowsDir, { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.isSymbolicLink()) {
+      violations.push(`Forbidden symlink entry in ${workflowsDir}: ${entry.name}`);
+    }
+  }
   const wfFiles = entries
     .filter((e) => e.isFile() && (e.name.endsWith('.yml') || e.name.endsWith('.yaml')))
     .map((e) => join(workflowsDir, e.name));
 
   if (wfFiles.length === 0) {
-    const err = `Gate 0 failed: no workflow files (*.yml, *.yaml) found in ${workflowsDir}`;
-    const res = [err];
+    if (violations.length === 0) {
+      violations.push(`Gate 0 failed: no workflow files (*.yml, *.yaml) found in ${workflowsDir}`);
+    }
+    const res = [...violations];
     res.ok = false;
     res.violations = res;
     return res;
@@ -482,6 +538,10 @@ export function auditWorkflows(targetPath, options = {}) {
     } catch (err) {
       violations.push(`${wfName}: cannot read file: ${err.message}`);
       continue;
+    }
+
+    if (/#\s*zizmor:\s*ignore\b/i.test(content)) {
+      violations.push(`${wfName} must not contain inline # zizmor: ignore comments`);
     }
 
     let doc;
@@ -668,8 +728,10 @@ export function auditWorkflows(targetPath, options = {}) {
         }
       }
 
-      if (doc.on && typeof doc.on === 'object' && !Array.isArray(doc.on) && doc.on.pull_request) {
-        const prBranches = doc.on.pull_request.branches;
+      if (!doc.on || typeof doc.on !== 'object' || Array.isArray(doc.on) || !Object.hasOwn(doc.on, 'pull_request')) {
+        violations.push(`${wfName}: missing 'on.pull_request' trigger with 'branches: [main, src-*/epic/**]'`);
+      } else {
+        const prBranches = doc.on.pull_request?.branches;
         if (!Array.isArray(prBranches) || !prBranches.includes('main') || !prBranches.includes('src-*/epic/**')) {
           violations.push(
             `${wfName}: 'on.pull_request.branches' must include 'main' and 'src-*/epic/**' so Epic sub-issue PRs run CI`,
@@ -932,7 +994,7 @@ export function auditWorkflows(targetPath, options = {}) {
       const zizmorPath = join(dirname(workflowsDir), 'zizmor.yml');
       if (existsSync(zizmorPath)) {
         auditZizmorConfig(readFileSync(zizmorPath, 'utf8'), content, violations);
-      } else if (isRootWorkflows) {
+      } else if (isRootWorkflows || opts.requireCanonicalWorkflows) {
         violations.push('Missing required .github/zizmor.yml for release.yml use-trusted-publishing line-pin enforcement');
       }
     }
