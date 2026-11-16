@@ -3,7 +3,7 @@ rules:
     ignore:
       # GitHub Packages (npm.pkg.github.com) does not support OIDC Trusted Publishing;
       # pin strictly to publish-gpr's `npm publish` line so publish-npm remains audited.
-      - release.yml:1
+      - release.yml:179
   self-repository:
     ignore:
       # Standardized job-level reusable-workflow call to ./.github/workflows/ci.yml.

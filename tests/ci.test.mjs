@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -11,6 +12,7 @@ import {
   hasUnescapedExpression,
   SEMVER_RELEASE_TAG_REGEX,
 } from '../tools/check-workflows.mjs';
+import { packageAssets } from '../tools/package-assets.mjs';
 import {
   assertSafeWriteTarget,
   assertValidMtimeOption,
@@ -981,4 +983,59 @@ test('path-jail: parseCliOutDir, assertValidMtimeOption, stripWin32DeviceNamespa
   assert.equal(isDirectCli(checkWorkflowsUrl, ''), false);
   assert.equal(isDirectCli(checkWorkflowsUrl, checkWorkflowsScriptPath), true);
   assert.equal(isDirectCli(checkWorkflowsUrl, join(root, 'tools', 'lint.mjs')), false);
+});
+
+// ---------------------------------------------------------------------------
+// Unit tests: tools/package-assets.mjs
+// ---------------------------------------------------------------------------
+
+test('packageAssets packs .tgz into outDir/assets, writes SHA256SUMS.txt, and cleans stale tarballs', () => {
+  const tempOut = mkdtempSync(join(tmpdir(), 'pgmmv_pkg_assets_'));
+  try {
+    const staleAssetsDir = join(tempOut, 'assets');
+    mkdirSync(staleAssetsDir, { recursive: true });
+    writeFileSync(join(staleAssetsDir, 'kidthales-pgmmv-types-0.0.1-stale.tgz'), 'stale', 'utf8');
+
+    const res = packageAssets({ rootDir: root, outDir: tempOut, allowedRoot: tmpdir() });
+    assert.match(res.tarballName, /^kidthales-pgmmv-types-.*\.tgz$/);
+    assert.equal(existsSync(res.tarballPath), true);
+    assert.ok(res.tarballBytes > 0);
+    assert.equal(existsSync(res.sha256SumsPath), true);
+
+    const tgzEntries = readdirSync(staleAssetsDir).filter((f) => f.endsWith('.tgz'));
+    assert.deepEqual(tgzEntries, [res.tarballName], 'Expected stale .tgz archives to be removed');
+
+    const expectedLicenseSha = createHash('sha256').update(readFileSync(join(root, 'LICENSE'))).digest('hex');
+    const expectedTgzSha = createHash('sha256').update(readFileSync(res.tarballPath)).digest('hex');
+    const sumsRaw = readFileSync(res.sha256SumsPath, 'utf8');
+    const lines = sumsRaw.trimEnd().split('\n');
+    assert.deepEqual(lines, [`${expectedLicenseSha}  LICENSE`, `${expectedTgzSha}  ${res.tarballName}`]);
+  } finally {
+    rmSync(tempOut, { recursive: true, force: true });
+  }
+});
+
+test('packageAssets and tools/package-assets.mjs CLI fail closed on invalid inputs and missing prerequisites', () => {
+  assert.throws(() => packageAssets(null), /Invalid options/);
+  assert.throws(() => packageAssets({ rootDir: root, outDir: tmpdir() }), /refusing to write outside allowed jail boundary/);
+
+  withTempGithubFixture(
+    {
+      'package.json': JSON.stringify({ name: 'fixture', version: '1.0.0' }),
+    },
+    (tempRoot) => {
+      assert.throws(() => packageAssets({ rootDir: tempRoot }), /LICENSE not found/);
+      writeFileSync(join(tempRoot, 'LICENSE'), 'MIT\n', 'utf8');
+      assert.throws(() => packageAssets({ rootDir: tempRoot }), /generated declarations missing/);
+    },
+  );
+
+  const pkgAssetsCli = join(root, 'tools', 'package-assets.mjs');
+  const unknownFlag = spawnSync(process.execPath, [pkgAssetsCli, '--bogus'], { encoding: 'utf8' });
+  assert.notEqual(unknownFlag.status, 0);
+  assert.match(unknownFlag.stderr, /Unknown option/);
+
+  const missingOutDir = spawnSync(process.execPath, [pkgAssetsCli, '--outDir'], { encoding: 'utf8' });
+  assert.notEqual(missingOutDir.status, 0);
+  assert.match(missingOutDir.stderr, /missing or empty directory argument/);
 });
