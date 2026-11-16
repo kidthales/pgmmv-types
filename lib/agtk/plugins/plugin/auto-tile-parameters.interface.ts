@@ -28,6 +28,8 @@ export type AgtkAutoTileCommand =
 
 /**
  * Tile area tuple `[tileStartX, tileStartY, horzTileCount, vertTileCount]` passed to `updateArea`.
+ *
+ * Reference-only parameter tuple for auto-tile `AgtkPlugin.call(..., 'updateArea', area)` handlers.
  */
 export type AgtkAutoTileUpdateArea = [
   tileStartX: number,
@@ -38,6 +40,8 @@ export type AgtkAutoTileUpdateArea = [
 
 /**
  * Host-side return type mapping for auto-tile `AgtkPlugin.call` commands.
+ *
+ * Reference map for {@link AgtkAutoTileCallResult}.
  */
 export interface AgtkAutoTileCallMap {
   getHorzCount: number;
@@ -48,3 +52,8 @@ export interface AgtkAutoTileCallMap {
   updateArea: void;
   onParamChanged: void;
 }
+
+/**
+ * Host-side return type helper for an auto-tile `AgtkPlugin.call` command.
+ */
+export type AgtkAutoTileCallResult<C extends AgtkAutoTileCommand = AgtkAutoTileCommand> = AgtkAutoTileCallMap[C];

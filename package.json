@@ -48,7 +48,9 @@
   },
   "scripts": {
     "generate": "node tools/generate.mjs",
-    "lint": "tsc --noEmit && node tools/lint.mjs"
+    "check:types": "tsc -p tests/fixtures/tsc/tsconfig.bundler.json --noEmit && tsc -p tests/fixtures/tsc/tsconfig.node16.json --noEmit",
+    "lint": "tsc --noEmit && npm run check:types && node tools/lint.mjs",
+    "test": "npm run lint && node --test"
   },
   "dependencies": {
     "type-fest": "^5.4.4"

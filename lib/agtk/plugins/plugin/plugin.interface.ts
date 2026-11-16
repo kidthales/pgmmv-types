@@ -30,6 +30,18 @@ export interface AgtkPluginInfoMap<I extends JsonValue = JsonValue> {
 }
 
 /**
+ * Expected return type for a given `AgtkPlugin.getInfo` category.
+ *
+ * Accepts either `AgtkPluginInfoCategory` enum members or their string literal values.
+ */
+export type AgtkPluginInfoResult<
+  C extends AgtkPluginInfoCategoryValue = AgtkPluginInfoCategoryValue,
+  I extends JsonValue = JsonValue
+> = {
+  [K in keyof AgtkPluginInfoMap<I> as `${K}`]: AgtkPluginInfoMap<I>[K];
+}[`${C}`];
+
+/**
  * Agtk plugin interface.
  */
 export interface AgtkPlugin<I extends JsonValue = JsonValue> {
@@ -59,7 +71,12 @@ export interface AgtkPlugin<I extends JsonValue = JsonValue> {
    *  - actionCommand: Defines unique action command.
    *  - linkCondition: Defines unique link condition.
    *  - autoTile: Defines auto-tile parameters.
-   * @returns Category information.
+   * @returns Category information union (`AgtkPluginInfoMap<I>[AgtkPluginInfoCategory] | undefined`).
+   * @note The return type is intentionally a union rather than an overloaded or generic
+   * signature so plugin implementations remain ergonomic in TypeScript and `@ts-check`
+   * JavaScript. TypeScript does not enforce per-category return types inside `getInfo`
+   * implementations; use `AgtkPluginInfoResult<C, I>` (or `AgtkPluginInfoMap<I>[C]`) when
+   * narrowing a specific category's result type.
    */
   getInfo: (category: AgtkPluginInfoCategoryValue) => AgtkPluginInfoMap<I>[AgtkPluginInfoCategory] | undefined;
 
