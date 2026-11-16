@@ -19,9 +19,6 @@ Install as a development dependency from the public npm registry:
 npm install --save-dev @kidthales/pgmmv-types
 ```
 
-> [!NOTE]
-> While `0.2.0-alpha.1` is published as a SemVer pre-release, install the pre-release dist-tag explicitly with `npm install --save-dev @kidthales/pgmmv-types@next` (or `@kidthales/pgmmv-types@0.2.0-alpha.1`).
-
 ### GitHub Packages (Alternative)
 
 To install from GitHub Packages instead, map the `@kidthales` scope in `.npmrc`:
@@ -121,7 +118,7 @@ PGMMV executes plugins in an embedded ES5 JavaScript runtime. You can type-check
         case 'parameter':
           return [];
         case 'internal':
-          return null;
+          return {};
         default:
           break;
       }
