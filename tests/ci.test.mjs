@@ -8,6 +8,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { gunzipSync } from 'node:zlib';
 import {
+  auditDependabotConfig,
   auditWorkflows,
   auditZizmorConfig,
   hasUnescapedExpression,
@@ -358,6 +359,50 @@ function buildMatchingZizmorYml(releaseYaml) {
   self-repository:
     ignore:
       - release.yml
+`;
+}
+
+function buildCompliantDependabotYml() {
+  return `version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: quarterly
+      timezone: Canada/Pacific
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: 'chore(deps)'
+    versioning-strategy: increase-if-necessary
+    ignore:
+      - dependency-name: '*'
+        update-types:
+          - version-update:semver-major
+    groups:
+      dependencies:
+        patterns:
+          - '*'
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: quarterly
+      timezone: Canada/Pacific
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: 'chore(deps)'
+    ignore:
+      - dependency-name: '*'
+        update-types:
+          - version-update:semver-major
+    groups:
+      actions:
+        patterns:
+          - '*'
 `;
 }
 
@@ -1018,6 +1063,118 @@ test('auditZizmorConfig enforces exact release.yml line-pin and self-repository 
       const res = auditWorkflows(dir);
       assert.equal(res.ok, false);
       assert.ok(res.violations.some((v) => v.includes('zizmor line pin drifted')));
+    },
+  );
+});
+
+test('auditDependabotConfig enforces quarterly cold-storage cadence and semver-major ignores', () => {
+  const compliant = buildCompliantDependabotYml();
+  assert.deepEqual(auditDependabotConfig(compliant), []);
+
+  // Repo .github/dependabot.yml passes auditDependabotConfig
+  const repoDependabot = readFileSync(join(root, '.github', 'dependabot.yml'), 'utf8');
+  assert.deepEqual(auditDependabotConfig(repoDependabot), []);
+
+  // Invalid YAML and non-mapping root
+  assert.ok(auditDependabotConfig('updates: [unclosed').some((v) => v.includes('YAML parse error')));
+  assert.ok(auditDependabotConfig('- just-a-list\n').some((v) => v.includes('must be a YAML mapping')));
+
+  // Wrong version or missing updates array
+  assert.ok(
+    auditDependabotConfig(compliant.replace('version: 2', 'version: 1')).some((v) => v.includes('version must be 2')),
+  );
+  assert.ok(auditDependabotConfig('version: 2\n').some((v) => v.includes('must define an updates array')));
+
+  // Non-quarterly schedules must be rejected per ecosystem
+  const monthlyNpm = compliant.replace(
+    '  - package-ecosystem: npm\n    directory: /\n    schedule:\n      interval: quarterly',
+    '  - package-ecosystem: npm\n    directory: /\n    schedule:\n      interval: monthly',
+  );
+  assert.ok(
+    auditDependabotConfig(monthlyNpm).some((v) => v.includes("ecosystem 'npm' schedule.interval must be 'quarterly'")),
+  );
+
+  const weeklyActions = compliant.replace(
+    '  - package-ecosystem: github-actions\n    directory: /\n    schedule:\n      interval: quarterly',
+    '  - package-ecosystem: github-actions\n    directory: /\n    schedule:\n      interval: weekly',
+  );
+  assert.ok(
+    auditDependabotConfig(weeklyActions).some((v) =>
+      v.includes("ecosystem 'github-actions' schedule.interval must be 'quarterly'"),
+    ),
+  );
+
+  // Missing semver-major ignore or non-wildcard dependency-name must be rejected per ecosystem
+  const missingIgnoreNpm = compliant.replace(
+    "    ignore:\n      - dependency-name: '*'\n        update-types:\n          - version-update:semver-major\n    groups:\n      dependencies:",
+    '    groups:\n      dependencies:',
+  );
+  assert.ok(
+    auditDependabotConfig(missingIgnoreNpm).some((v) =>
+      v.includes("ecosystem 'npm' must ignore dependency-name '*' update-types 'version-update:semver-major'"),
+    ),
+  );
+
+  const scopedIgnoreActions = compliant.replace(
+    "    ignore:\n      - dependency-name: '*'\n        update-types:\n          - version-update:semver-major\n    groups:\n      actions:",
+    "    ignore:\n      - dependency-name: 'actions/*'\n        update-types:\n          - version-update:semver-major\n    groups:\n      actions:",
+  );
+  assert.ok(
+    auditDependabotConfig(scopedIgnoreActions).some((v) =>
+      v.includes(
+        "ecosystem 'github-actions' must ignore dependency-name '*' update-types 'version-update:semver-major'",
+      ),
+    ),
+  );
+
+  // Missing required ecosystem
+  const onlyNpm = compliant.split('\n  - package-ecosystem: github-actions')[0] + '\n';
+  assert.ok(
+    auditDependabotConfig(onlyNpm).some((v) => v.includes("missing required package-ecosystem 'github-actions'")),
+  );
+
+  // Missing .github/dependabot.yml must fail when requireCanonicalWorkflows is true
+  const releaseYml = buildCompliantReleaseYml();
+  const zizmorYml = buildMatchingZizmorYml(releaseYml);
+  withTempGithubFixture(
+    {
+      '.github/workflows/ci.yml': buildCompliantCiYml(),
+      '.github/workflows/release.yml': releaseYml,
+      '.github/zizmor.yml': zizmorYml,
+    },
+    (dir) => {
+      const res = auditWorkflows(dir, { requireCanonicalWorkflows: true });
+      assert.equal(res.ok, false);
+      assert.ok(res.violations.some((v) => v.includes('Missing required .github/dependabot.yml')));
+    },
+  );
+
+  // Compliant full canonical fixture (including .github/dependabot.yml) passes with requireCanonicalWorkflows: true
+  withTempGithubFixture(
+    {
+      '.github/workflows/ci.yml': buildCompliantCiYml(),
+      '.github/workflows/release.yml': releaseYml,
+      '.github/zizmor.yml': zizmorYml,
+      '.github/dependabot.yml': compliant,
+    },
+    (dir) => {
+      const res = auditWorkflows(dir, { requireCanonicalWorkflows: true });
+      assert.equal(res.ok, true, `Expected full canonical fixture to pass, got: ${res.violations.join('; ')}`);
+    },
+  );
+
+  // Gate 0 integration catches .github/dependabot.yml drift
+  withTempGithubFixture(
+    {
+      '.github/workflows/ci.yml': buildCompliantCiYml(),
+      '.github/workflows/release.yml': releaseYml,
+      '.github/zizmor.yml': zizmorYml,
+      '.github/dependabot.yml': monthlyNpm,
+    },
+    (dir) => {
+      const res = auditWorkflows(dir);
+      assert.equal(res.ok, false);
+      assert.ok(res.violations.some((v) => v.includes("ecosystem 'npm' schedule.interval must be 'quarterly'")));
     },
   );
 });
