@@ -20,6 +20,7 @@ import {
   isDirectCli,
   isSameOrSubpath,
   parseCliOutDir,
+  PROTECTED_INTERNAL_DIRS,
   resolveOutDir,
   resolveRealPath,
   stripWin32DeviceNamespacePrefix,
@@ -1030,10 +1031,22 @@ test('path-jail: resolveOutDir and assertSafeWriteTarget enforce repository jail
   assert.throws(() => resolveOutDir({ outDir: '' }), /Invalid outDir/);
   assert.throws(() => resolveOutDir({ outDir: '   ' }), /Invalid outDir/);
   assert.throws(() => resolveOutDir({ outDir: root }), /refusing to write to protected path/);
-  assert.throws(() => resolveOutDir({ outDir: join(root, 'lib') }), /refusing to write to protected path/);
-  assert.throws(() => resolveOutDir({ outDir: join(root, 'tools') }), /refusing to write to protected path/);
-  assert.throws(() => resolveOutDir({ outDir: join(root, 'tests') }), /refusing to write to protected path/);
-  assert.throws(() => resolveOutDir({ outDir: join(root, 'test') }), /refusing to write to protected path/);
+  assert.deepEqual(
+    [...PROTECTED_INTERNAL_DIRS],
+    ['.git', '.github', '.ci-local', 'lib', 'tools', 'tests', 'test', 'scripts', 'node_modules'],
+  );
+  for (const dirName of PROTECTED_INTERNAL_DIRS) {
+    assert.throws(
+      () => resolveOutDir({ outDir: join(root, dirName) }),
+      /refusing to write to protected path/,
+      `Expected resolveOutDir to reject protected dir "${dirName}"`,
+    );
+    assert.throws(
+      () => resolveOutDir({ outDir: join(root, dirName, 'nested') }),
+      /refusing to write to protected path/,
+      `Expected resolveOutDir to reject nested protected dir "${dirName}/nested"`,
+    );
+  }
   assert.throws(() => resolveOutDir({ outDir: join(root, '..foo') }), /refusing to write outside allowed jail boundary/);
   assert.throws(() => resolveOutDir({ outDir: join(root, 'dist..foo') }), /refusing to write outside allowed jail boundary/);
   assert.throws(() => resolveOutDir({ outDir: dirname(root) }), /refusing to write outside allowed jail boundary/);
@@ -1069,6 +1082,38 @@ test('path-jail: symlink escape outside jail root is rejected', () => {
   } finally {
     rmSync(outsideDir, { recursive: true, force: true });
     rmSync(jailDir, { recursive: true, force: true });
+  }
+});
+
+test('path-jail: non-existent child targets beneath intra-repo symlinks/junctions into protected dirs are rejected', () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), 'pgmmv_jail_protected_link_'));
+  try {
+    mkdirSync(join(tempRoot, 'lib'), { recursive: true });
+    mkdirSync(join(tempRoot, 'scripts'), { recursive: true });
+    mkdirSync(join(tempRoot, '.ci-local'), { recursive: true });
+    mkdirSync(join(tempRoot, 'node_modules'), { recursive: true });
+
+    const dirLinkType = process.platform === 'win32' ? 'junction' : 'dir';
+    symlinkSync(join(tempRoot, 'lib'), join(tempRoot, 'link-lib'), dirLinkType);
+    symlinkSync(join(tempRoot, 'scripts'), join(tempRoot, 'link-scripts'), dirLinkType);
+    symlinkSync(join(tempRoot, '.ci-local'), join(tempRoot, 'link-ci-local'), dirLinkType);
+    symlinkSync(join(tempRoot, 'node_modules'), join(tempRoot, 'link-node-modules'), dirLinkType);
+
+    for (const relTarget of [
+      'link-lib/nonexistent-sub',
+      'link-lib/nested/deep',
+      'link-scripts/nonexistent-sub',
+      'link-ci-local/nonexistent-sub',
+      'link-node-modules/nonexistent-sub',
+    ]) {
+      assert.throws(
+        () => resolveOutDir({ rootDir: tempRoot, outDir: relTarget, allowedRoot: tempRoot }),
+        /refusing to write to protected path/,
+        `Expected resolveOutDir to reject "${relTarget}"`,
+      );
+    }
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
   }
 });
 

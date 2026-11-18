@@ -19,9 +19,9 @@ import {
 } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isSameOrSubpath, PROTECTED_INTERNAL_DIRS, resolveRealPath } from './path-jail.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const RESERVED_OUT_DIRS = ['.git', '.github', '.ci-local', 'lib', 'tools', 'tests', 'test', 'node_modules'];
 const STATEMENT_RESET_KEYWORDS = new Set([
   'import',
   'export',
@@ -371,7 +371,7 @@ export function validateOutDir(targetRoot, rawOutDir) {
     throw new Error(`Invalid output directory "${outDir}": must be a subdirectory inside ${targetRoot}`);
   }
 
-  for (const reserved of RESERVED_OUT_DIRS) {
+  for (const reserved of PROTECTED_INTERNAL_DIRS) {
     const reservedPath = join(targetRoot, reserved);
     if (isWithinRoot(reservedPath, outDir)) {
       throw new Error(`Invalid output directory "${outDir}": cannot target reserved directory "${reserved}"`);
@@ -388,6 +388,17 @@ export function validateOutDir(targetRoot, rawOutDir) {
   }
   if (!isWithinRoot(realTargetRoot, realExistingParent)) {
     throw new Error(`Invalid output directory "${outDir}": parent resolves outside ${targetRoot} via symlink`);
+  }
+
+  const resolvedOutDir = resolveRealPath(outDir);
+  if (!isSameOrSubpath(resolvedOutDir, realTargetRoot) || isSameOrSubpath(realTargetRoot, resolvedOutDir)) {
+    throw new Error(`Invalid output directory "${outDir}": resolves outside ${targetRoot} via symlink`);
+  }
+  for (const reserved of PROTECTED_INTERNAL_DIRS) {
+    const reservedReal = resolveRealPath(join(targetRoot, reserved));
+    if (isSameOrSubpath(resolvedOutDir, reservedReal)) {
+      throw new Error(`Invalid output directory "${outDir}": resolves inside reserved directory "${reserved}"`);
+    }
   }
 
   let outLstat = null;
@@ -407,15 +418,6 @@ export function validateOutDir(targetRoot, rawOutDir) {
     }
     if (!isWithinRoot(realTargetRoot, realOutDir) || realOutDir === realTargetRoot) {
       throw new Error(`Invalid output directory "${outDir}": resolves outside ${targetRoot} via symlink`);
-    }
-    for (const reserved of RESERVED_OUT_DIRS) {
-      const reservedPath = join(targetRoot, reserved);
-      if (existsSync(reservedPath)) {
-        const realReserved = realpathSync(reservedPath);
-        if (isWithinRoot(realReserved, realOutDir)) {
-          throw new Error(`Invalid output directory "${outDir}": resolves inside reserved directory "${reserved}"`);
-        }
-      }
     }
     if (outLstat.isSymbolicLink()) {
       throw new Error(`Invalid output directory "${outDir}": cannot be a symbolic link`);
