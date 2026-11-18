@@ -5,6 +5,17 @@ All notable changes to `@kidthales/pgmmv-types` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-11-18
+
+Maintenance release unifying protected-directory path guards, completing workflow permission falsification tests, moving Dependabot to a quarterly non-major cadence, and resolving `README.md` badges and links for `npmjs.com`.
+
+### Changed
+
+- **Protected-directory parity & ancestor symlink guard (`tools/path-jail.mjs`, `tools/generate.mjs`, `tests/tools.test.mjs`, `tests/ci.test.mjs`) (`#85`)**: Shared the canonical protected internal directory list across `tools/path-jail.mjs` and `tools/generate.mjs`, and rejected non-existent child targets beneath intra-repo symlinks or junctions resolving inside protected directories with negative unit tests.
+- **Symmetric `attach-assets` negative permission falsification (`tests/ci.test.mjs`) (`#85`, supersedes `#87`)**: Parametrized the `attach-assets` permission test block over omitted write-scope (`N - 1`), downgraded write-scope (`N = 3`), and extra-scope (`N + 1`) mutations.
+- **Cold-storage Dependabot cadence (`.github/dependabot.yml`, `tools/check-workflows.mjs`, `tests/ci.test.mjs`) (`#85`)**: Switched Dependabot from `monthly` to `quarterly` and ignored `version-update:semver-major` updates across `npm` and `github-actions` ecosystems, with matching workflow auditor assertions.
+- **Package metadata & `README.md` badges/links (`#85`)**: Bumped `package.json` and `package-lock.json` to `0.2.1`, added GitHub Release and TypeScript badges to `README.md`, and converted relative `./CHANGELOG.md`, `./LICENSE`, and `./package.json` links to canonical `https://github.com/kidthales/pgmmv-types/blob/main/...` URLs for `npmjs.com`.
+
 ## [0.2.0] - 2026-11-16
 
 Release preparing `@kidthales/pgmmv-types` for public npm registry publication with generated `node16`-clean `dist/` declarations, AutoTile and Database declaration updates, and a zero-bloat TypeScript 7 toolchain.

@@ -8,6 +8,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { gunzipSync } from 'node:zlib';
 import {
+  auditDependabotConfig,
   auditWorkflows,
   auditZizmorConfig,
   hasUnescapedExpression,
@@ -20,6 +21,7 @@ import {
   isDirectCli,
   isSameOrSubpath,
   parseCliOutDir,
+  PROTECTED_INTERNAL_DIRS,
   resolveOutDir,
   resolveRealPath,
   stripWin32DeviceNamespacePrefix,
@@ -357,6 +359,50 @@ function buildMatchingZizmorYml(releaseYaml) {
   self-repository:
     ignore:
       - release.yml
+`;
+}
+
+function buildCompliantDependabotYml() {
+  return `version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: quarterly
+      timezone: Canada/Pacific
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: 'chore(deps)'
+    versioning-strategy: increase-if-necessary
+    ignore:
+      - dependency-name: '*'
+        update-types:
+          - version-update:semver-major
+    groups:
+      dependencies:
+        patterns:
+          - '*'
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: quarterly
+      timezone: Canada/Pacific
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: 'chore(deps)'
+    ignore:
+      - dependency-name: '*'
+        update-types:
+          - version-update:semver-major
+    groups:
+      actions:
+        patterns:
+          - '*'
 `;
 }
 
@@ -1021,6 +1067,141 @@ test('auditZizmorConfig enforces exact release.yml line-pin and self-repository 
   );
 });
 
+test('auditDependabotConfig enforces quarterly cold-storage cadence and semver-major ignores', () => {
+  const compliant = buildCompliantDependabotYml();
+  assert.deepEqual(auditDependabotConfig(compliant), []);
+
+  // Repo .github/dependabot.yml passes auditDependabotConfig
+  const repoDependabot = readFileSync(join(root, '.github', 'dependabot.yml'), 'utf8');
+  assert.deepEqual(auditDependabotConfig(repoDependabot), []);
+
+  // Invalid YAML and non-mapping root
+  assert.ok(auditDependabotConfig('updates: [unclosed').some((v) => v.includes('YAML parse error')));
+  assert.ok(auditDependabotConfig('- just-a-list\n').some((v) => v.includes('must be a YAML mapping')));
+
+  // Wrong version or missing updates array
+  assert.ok(
+    auditDependabotConfig(compliant.replace('version: 2', 'version: 1')).some((v) => v.includes('version must be 2')),
+  );
+  assert.ok(auditDependabotConfig('version: 2\n').some((v) => v.includes('must define an updates array')));
+
+  // Non-quarterly schedules must be rejected per ecosystem
+  const monthlyNpm = compliant.replace(
+    '  - package-ecosystem: npm\n    directory: /\n    schedule:\n      interval: quarterly',
+    '  - package-ecosystem: npm\n    directory: /\n    schedule:\n      interval: monthly',
+  );
+  assert.ok(
+    auditDependabotConfig(monthlyNpm).some((v) => v.includes("ecosystem 'npm' schedule.interval must be 'quarterly'")),
+  );
+
+  const weeklyActions = compliant.replace(
+    '  - package-ecosystem: github-actions\n    directory: /\n    schedule:\n      interval: quarterly',
+    '  - package-ecosystem: github-actions\n    directory: /\n    schedule:\n      interval: weekly',
+  );
+  assert.ok(
+    auditDependabotConfig(weeklyActions).some((v) =>
+      v.includes("ecosystem 'github-actions' schedule.interval must be 'quarterly'"),
+    ),
+  );
+
+  // Missing semver-major ignore or non-wildcard dependency-name must be rejected per ecosystem
+  const missingIgnoreNpm = compliant.replace(
+    "    ignore:\n      - dependency-name: '*'\n        update-types:\n          - version-update:semver-major\n    groups:\n      dependencies:",
+    '    groups:\n      dependencies:',
+  );
+  assert.ok(
+    auditDependabotConfig(missingIgnoreNpm).some((v) =>
+      v.includes("ecosystem 'npm' must ignore dependency-name '*' update-types 'version-update:semver-major'"),
+    ),
+  );
+
+  const scopedIgnoreActions = compliant.replace(
+    "    ignore:\n      - dependency-name: '*'\n        update-types:\n          - version-update:semver-major\n    groups:\n      actions:",
+    "    ignore:\n      - dependency-name: 'actions/*'\n        update-types:\n          - version-update:semver-major\n    groups:\n      actions:",
+  );
+  assert.ok(
+    auditDependabotConfig(scopedIgnoreActions).some((v) =>
+      v.includes(
+        "ecosystem 'github-actions' must ignore dependency-name '*' update-types 'version-update:semver-major'",
+      ),
+    ),
+  );
+
+  // Wildcard ignore rule narrowed by a versions filter must be rejected
+  const versionFilteredIgnoreNpm = compliant.replace(
+    "    ignore:\n      - dependency-name: '*'\n        update-types:\n          - version-update:semver-major\n    groups:\n      dependencies:",
+    "    ignore:\n      - dependency-name: '*'\n        versions:\n          - '>= 1.0.0'\n        update-types:\n          - version-update:semver-major\n    groups:\n      dependencies:",
+  );
+  assert.ok(
+    auditDependabotConfig(versionFilteredIgnoreNpm).some((v) =>
+      v.includes("ecosystem 'npm' must ignore dependency-name '*' update-types 'version-update:semver-major'"),
+    ),
+  );
+
+  // Additional ecosystems beyond REQUIRED_DEPENDABOT_ECOSYSTEMS must also enforce quarterly + semver-major ignore
+  const extraNonQuarterlyEcosystem = `${compliant}  - package-ecosystem: docker\n    directory: /\n    schedule:\n      interval: weekly\n`;
+  const extraViolations = auditDependabotConfig(extraNonQuarterlyEcosystem);
+  assert.ok(
+    extraViolations.some((v) => v.includes("ecosystem 'docker' schedule.interval must be 'quarterly'")),
+  );
+  assert.ok(
+    extraViolations.some((v) =>
+      v.includes("ecosystem 'docker' must ignore dependency-name '*' update-types 'version-update:semver-major'"),
+    ),
+  );
+
+  // Missing required ecosystem
+  const onlyNpm = compliant.split('\n  - package-ecosystem: github-actions')[0] + '\n';
+  assert.ok(
+    auditDependabotConfig(onlyNpm).some((v) => v.includes("missing required package-ecosystem 'github-actions'")),
+  );
+
+  // Missing .github/dependabot.yml must fail when requireCanonicalWorkflows is true
+  const releaseYml = buildCompliantReleaseYml();
+  const zizmorYml = buildMatchingZizmorYml(releaseYml);
+  withTempGithubFixture(
+    {
+      '.github/workflows/ci.yml': buildCompliantCiYml(),
+      '.github/workflows/release.yml': releaseYml,
+      '.github/zizmor.yml': zizmorYml,
+    },
+    (dir) => {
+      const res = auditWorkflows(dir, { requireCanonicalWorkflows: true });
+      assert.equal(res.ok, false);
+      assert.ok(res.violations.some((v) => v.includes('Missing required .github/dependabot.yml')));
+    },
+  );
+
+  // Compliant full canonical fixture (including .github/dependabot.yml) passes with requireCanonicalWorkflows: true
+  withTempGithubFixture(
+    {
+      '.github/workflows/ci.yml': buildCompliantCiYml(),
+      '.github/workflows/release.yml': releaseYml,
+      '.github/zizmor.yml': zizmorYml,
+      '.github/dependabot.yml': compliant,
+    },
+    (dir) => {
+      const res = auditWorkflows(dir, { requireCanonicalWorkflows: true });
+      assert.equal(res.ok, true, `Expected full canonical fixture to pass, got: ${res.violations.join('; ')}`);
+    },
+  );
+
+  // Gate 0 integration catches .github/dependabot.yml drift
+  withTempGithubFixture(
+    {
+      '.github/workflows/ci.yml': buildCompliantCiYml(),
+      '.github/workflows/release.yml': releaseYml,
+      '.github/zizmor.yml': zizmorYml,
+      '.github/dependabot.yml': monthlyNpm,
+    },
+    (dir) => {
+      const res = auditWorkflows(dir);
+      assert.equal(res.ok, false);
+      assert.ok(res.violations.some((v) => v.includes("ecosystem 'npm' schedule.interval must be 'quarterly'")));
+    },
+  );
+});
+
 // ---------------------------------------------------------------------------
 // Unit tests: tools/path-jail.mjs
 // ---------------------------------------------------------------------------
@@ -1030,10 +1211,22 @@ test('path-jail: resolveOutDir and assertSafeWriteTarget enforce repository jail
   assert.throws(() => resolveOutDir({ outDir: '' }), /Invalid outDir/);
   assert.throws(() => resolveOutDir({ outDir: '   ' }), /Invalid outDir/);
   assert.throws(() => resolveOutDir({ outDir: root }), /refusing to write to protected path/);
-  assert.throws(() => resolveOutDir({ outDir: join(root, 'lib') }), /refusing to write to protected path/);
-  assert.throws(() => resolveOutDir({ outDir: join(root, 'tools') }), /refusing to write to protected path/);
-  assert.throws(() => resolveOutDir({ outDir: join(root, 'tests') }), /refusing to write to protected path/);
-  assert.throws(() => resolveOutDir({ outDir: join(root, 'test') }), /refusing to write to protected path/);
+  assert.deepEqual(
+    [...PROTECTED_INTERNAL_DIRS],
+    ['.git', '.github', '.ci-local', 'lib', 'tools', 'tests', 'test', 'scripts', 'node_modules'],
+  );
+  for (const dirName of PROTECTED_INTERNAL_DIRS) {
+    assert.throws(
+      () => resolveOutDir({ outDir: join(root, dirName) }),
+      /refusing to write to protected path/,
+      `Expected resolveOutDir to reject protected dir "${dirName}"`,
+    );
+    assert.throws(
+      () => resolveOutDir({ outDir: join(root, dirName, 'nested') }),
+      /refusing to write to protected path/,
+      `Expected resolveOutDir to reject nested protected dir "${dirName}/nested"`,
+    );
+  }
   assert.throws(() => resolveOutDir({ outDir: join(root, '..foo') }), /refusing to write outside allowed jail boundary/);
   assert.throws(() => resolveOutDir({ outDir: join(root, 'dist..foo') }), /refusing to write outside allowed jail boundary/);
   assert.throws(() => resolveOutDir({ outDir: dirname(root) }), /refusing to write outside allowed jail boundary/);
@@ -1069,6 +1262,67 @@ test('path-jail: symlink escape outside jail root is rejected', () => {
   } finally {
     rmSync(outsideDir, { recursive: true, force: true });
     rmSync(jailDir, { recursive: true, force: true });
+  }
+});
+
+test('path-jail: non-existent child targets beneath intra-repo symlinks/junctions into protected dirs are rejected', () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), 'pgmmv_jail_protected_link_'));
+  try {
+    mkdirSync(join(tempRoot, 'lib'), { recursive: true });
+    mkdirSync(join(tempRoot, 'scripts'), { recursive: true });
+    mkdirSync(join(tempRoot, '.ci-local'), { recursive: true });
+    mkdirSync(join(tempRoot, 'node_modules'), { recursive: true });
+
+    const dirLinkType = process.platform === 'win32' ? 'junction' : 'dir';
+    symlinkSync(join(tempRoot, 'lib'), join(tempRoot, 'link-lib'), dirLinkType);
+    symlinkSync(join(tempRoot, 'scripts'), join(tempRoot, 'link-scripts'), dirLinkType);
+    symlinkSync(join(tempRoot, '.ci-local'), join(tempRoot, 'link-ci-local'), dirLinkType);
+    symlinkSync(join(tempRoot, 'node_modules'), join(tempRoot, 'link-node-modules'), dirLinkType);
+
+    for (const relTarget of [
+      'link-lib/nonexistent-sub',
+      'link-lib/nested/deep',
+      'link-scripts/nonexistent-sub',
+      'link-ci-local/nonexistent-sub',
+      'link-node-modules/nonexistent-sub',
+    ]) {
+      assert.throws(
+        () => resolveOutDir({ rootDir: tempRoot, outDir: relTarget, allowedRoot: tempRoot }),
+        /refusing to write to protected path/,
+        `Expected resolveOutDir to reject "${relTarget}"`,
+      );
+    }
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('path-jail: protected dirs symlinked to sibling inside broader allowedRoot are still rejected', () => {
+  const outerRoot = mkdtempSync(join(tmpdir(), 'pgmmv_jail_broader_'));
+  try {
+    const repoDir = join(outerRoot, 'repo');
+    const siblingTarget = join(outerRoot, 'shared-node-modules');
+    mkdirSync(repoDir, { recursive: true });
+    mkdirSync(siblingTarget, { recursive: true });
+
+    const dirLinkType = process.platform === 'win32' ? 'junction' : 'dir';
+    symlinkSync(siblingTarget, join(repoDir, 'node_modules'), dirLinkType);
+
+    for (const candidate of ['node_modules', 'node_modules/sub', join(siblingTarget, 'sub')]) {
+      assert.throws(
+        () => resolveOutDir({ rootDir: repoDir, outDir: candidate, allowedRoot: outerRoot }),
+        /refusing to write to protected path/,
+        `Expected resolveOutDir to reject "${candidate}" under broader allowedRoot`,
+      );
+    }
+
+    const safeSibling = join(outerRoot, 'safe-dist');
+    assert.equal(
+      resolveOutDir({ rootDir: repoDir, outDir: safeSibling, allowedRoot: outerRoot }),
+      resolveRealPath(safeSibling),
+    );
+  } finally {
+    rmSync(outerRoot, { recursive: true, force: true });
   }
 });
 
@@ -1383,22 +1637,33 @@ test('auditWorkflows enforces Gate 0 AST invariants (permissions types, attest s
     });
   }
 
-  {
+  for (const [label, badAttachPerms] of [
+    ['omitted contents (N - 1)', '      attestations: write\n      id-token: write\n'],
+    ['omitted attestations (N - 1)', '      contents: write\n      id-token: write\n'],
+    ['omitted id-token (N - 1)', '      contents: write\n      attestations: write\n'],
+    ['downgraded contents: read (N = 3)', '      contents: read\n      attestations: write\n      id-token: write\n'],
+    ['downgraded attestations: read (N = 3)', '      contents: write\n      attestations: read\n      id-token: write\n'],
+    ['downgraded id-token: read (N = 3)', '      contents: write\n      attestations: write\n      id-token: read\n'],
+    [
+      'extra issues: read (N + 1)',
+      '      contents: write\n      attestations: write\n      id-token: write\n      issues: read\n',
+    ],
+  ]) {
     const mutated = baseRelease.replace(
       '  attach-assets:\n    needs: [tag-guard, verify]\n    runs-on: ubuntu-latest\n    timeout-minutes: 15\n    permissions:\n      contents: write\n      attestations: write\n      id-token: write\n',
-      '  attach-assets:\n    needs: [tag-guard, verify]\n    runs-on: ubuntu-latest\n    timeout-minutes: 15\n    permissions:\n      contents: write\n      attestations: write\n      id-token: write\n      issues: read\n',
+      `  attach-assets:\n    needs: [tag-guard, verify]\n    runs-on: ubuntu-latest\n    timeout-minutes: 15\n    permissions:\n${badAttachPerms}`,
     );
-    assert.notEqual(mutated, baseRelease, 'Expected attach-assets permissions fixture mutation to apply');
+    assert.notEqual(mutated, baseRelease, `Expected attach-assets permissions fixture mutation (${label}) to apply`);
     withTempGithubFixture({ '.github/workflows/release.yml': mutated }, (dir) => {
       const res = auditWorkflows(dir);
-      assert.equal(res.ok, false);
+      assert.equal(res.ok, false, `Expected auditWorkflows to reject ${label}`);
       assert.ok(
         res.violations.some((v) =>
           v.includes(
             'attach-assets job must declare exact permissions { contents: write, attestations: write, id-token: write }',
           ),
         ),
-        `Expected attach-assets exact permissions violation, got: ${res.violations.join('; ')}`,
+        `Expected attach-assets exact permissions violation for ${label}, got: ${res.violations.join('; ')}`,
       );
     });
   }

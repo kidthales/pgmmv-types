@@ -2,7 +2,8 @@
 // Powered by `yaml` AST traversal. Enforces root least-privilege permissions, explicit job permissions,
 // timeout-minutes bounds, 40-char commit SHA action pins, checkout persist-credentials: false,
 // zero unescaped ${{ ... }} expressions in run/with.script blocks, canonical ./scripts/ci-local.ps1 -CI
-// delegation, tokenless OIDC publish-npm invariants, and .github/zizmor.yml line-pin parity.
+// delegation, tokenless OIDC publish-npm invariants, .github/zizmor.yml line-pin parity, and
+// .github/dependabot.yml cold-storage quarterly cadence.
 
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -383,6 +384,90 @@ export function auditZizmorConfig(zizmorRaw, releaseRaw, violations = []) {
     violations.push(
       `zizmor line pin drifted: .github/zizmor.yml pins release.yml:${pinnedLineNum}, but publish-gpr's npm publish is at release.yml:${actualGprPublishLine}`,
     );
+  }
+
+  return violations;
+}
+
+export const REQUIRED_DEPENDABOT_ECOSYSTEMS = ['npm', 'github-actions'];
+
+/**
+ * Verifies `.github/dependabot.yml` uses a quarterly cold-storage cadence and
+ * ignores `version-update:semver-major` across both `npm` and `github-actions`
+ * ecosystems.
+ */
+export function auditDependabotConfig(dependabotRaw, violations = []) {
+  let doc;
+  try {
+    doc = parse(dependabotRaw);
+  } catch (err) {
+    violations.push(`.github/dependabot.yml: YAML parse error: ${err.message}`);
+    return violations;
+  }
+
+  if (!doc || typeof doc !== 'object' || Array.isArray(doc)) {
+    violations.push('.github/dependabot.yml must be a YAML mapping');
+    return violations;
+  }
+
+  if (doc.version !== 2) {
+    violations.push(`.github/dependabot.yml version must be 2 (got ${JSON.stringify(doc.version)})`);
+  }
+
+  if (!Array.isArray(doc.updates)) {
+    violations.push('.github/dependabot.yml must define an updates array');
+    return violations;
+  }
+
+  const byEcosystem = new Map();
+  for (let i = 0; i < doc.updates.length; i++) {
+    const entry = doc.updates[i];
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      violations.push(`.github/dependabot.yml updates[${i}] must be a mapping`);
+      continue;
+    }
+    const ecosystem = typeof entry['package-ecosystem'] === 'string' ? entry['package-ecosystem'].trim() : '';
+    if (!ecosystem) {
+      violations.push(`.github/dependabot.yml updates[${i}] missing package-ecosystem`);
+      continue;
+    }
+    if (byEcosystem.has(ecosystem)) {
+      violations.push(`.github/dependabot.yml duplicate package-ecosystem '${ecosystem}'`);
+      continue;
+    }
+    byEcosystem.set(ecosystem, entry);
+  }
+
+  for (const ecosystem of REQUIRED_DEPENDABOT_ECOSYSTEMS) {
+    if (!byEcosystem.has(ecosystem)) {
+      violations.push(`.github/dependabot.yml missing required package-ecosystem '${ecosystem}'`);
+    }
+  }
+
+  for (const [ecosystem, entry] of byEcosystem.entries()) {
+    const interval = entry.schedule && typeof entry.schedule === 'object' ? entry.schedule.interval : undefined;
+    if (interval !== 'quarterly') {
+      violations.push(
+        `.github/dependabot.yml ecosystem '${ecosystem}' schedule.interval must be 'quarterly' (got ${JSON.stringify(interval)})`,
+      );
+    }
+
+    const ignoreList = Array.isArray(entry.ignore) ? entry.ignore : [];
+    const ignoresMajor = ignoreList.some(
+      (rule) =>
+        rule &&
+        typeof rule === 'object' &&
+        !Array.isArray(rule) &&
+        rule['dependency-name'] === '*' &&
+        rule.versions === undefined &&
+        Array.isArray(rule['update-types']) &&
+        rule['update-types'].includes('version-update:semver-major'),
+    );
+    if (!ignoresMajor) {
+      violations.push(
+        `.github/dependabot.yml ecosystem '${ecosystem}' must ignore dependency-name '*' update-types 'version-update:semver-major'`,
+      );
+    }
   }
 
   return violations;
@@ -1015,6 +1100,13 @@ export function auditWorkflows(targetPath, options = {}) {
         violations.push('Missing required .github/zizmor.yml for release.yml use-trusted-publishing line-pin enforcement');
       }
     }
+  }
+
+  const dependabotPath = join(dirname(workflowsDir), 'dependabot.yml');
+  if (existsSync(dependabotPath)) {
+    auditDependabotConfig(readFileSync(dependabotPath, 'utf8'), violations);
+  } else if (isRootWorkflows || opts.requireCanonicalWorkflows) {
+    violations.push('Missing required .github/dependabot.yml for cold-storage Dependabot cadence enforcement');
   }
 
   const result = [...violations];

@@ -23,6 +23,17 @@ export const testsDir = join(root, 'tests');
 export const testDir = join(root, 'test');
 
 export const MAX_SYMLINK_DEPTH = 32;
+export const PROTECTED_INTERNAL_DIRS = Object.freeze([
+  '.git',
+  '.github',
+  '.ci-local',
+  'lib',
+  'tools',
+  'tests',
+  'test',
+  'scripts',
+  'node_modules'
+]);
 const nativeRealpath = (p) => (typeof realpathSync.native === 'function' ? realpathSync.native(p) : realpathSync(p));
 const normCase = (p) => (process.platform === 'win32' ? p.toLowerCase() : p);
 const normalizePlatformPath = (p) => (process.platform === 'win32' ? stripWin32DeviceNamespacePrefix(p) : p);
@@ -161,19 +172,11 @@ export function resolveOutDir(opts = {}) {
     protectedRoots.push(effectiveRoot);
   }
   for (const baseRoot of protectedRoots) {
-    if (isSameOrSubpath(resolved, baseRoot)) {
-      if (
-        isSameOrSubpath(resolved, join(baseRoot, 'lib')) ||
-        isSameOrSubpath(resolved, join(baseRoot, 'tools')) ||
-        isSameOrSubpath(resolved, join(baseRoot, 'tests')) ||
-        isSameOrSubpath(resolved, join(baseRoot, 'test')) ||
-        isSameOrSubpath(resolved, join(baseRoot, '.github')) ||
-        isSameOrSubpath(resolved, join(baseRoot, 'scripts')) ||
-        isSameOrSubpath(resolved, join(baseRoot, '.git')) ||
-        isSameOrSubpath(baseRoot, resolved)
-      ) {
-        throw new Error(`Invalid outDir: refusing to write to protected path ${resolved}`);
-      }
+    if (
+      isSameOrSubpath(baseRoot, resolved) ||
+      PROTECTED_INTERNAL_DIRS.some((dir) => isSameOrSubpath(resolved, join(baseRoot, dir)))
+    ) {
+      throw new Error(`Invalid outDir: refusing to write to protected path ${resolved}`);
     }
   }
 

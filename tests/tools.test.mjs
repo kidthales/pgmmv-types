@@ -281,6 +281,7 @@ test('validateOutDir rejects reserved directories, subtrees, and symlink escapes
       mkdirSync(join(dir, 'tests'), { recursive: true });
       mkdirSync(join(dir, 'test'), { recursive: true });
       mkdirSync(join(dir, 'node_modules'), { recursive: true });
+      mkdirSync(join(dir, 'scripts'), { recursive: true });
       mkdirSync(join(dir, '.git'), { recursive: true });
       mkdirSync(join(dir, '.ci-local'), { recursive: true });
       mkdirSync(join(dir, 'real-dist'), { recursive: true });
@@ -300,6 +301,8 @@ test('validateOutDir rejects reserved directories, subtrees, and symlink escapes
         'tools',
         'tests/sub',
         'test',
+        'scripts',
+        'scripts/sub',
         'node_modules/x'
       ]) {
         assert.throws(
@@ -324,6 +327,20 @@ test('validateOutDir rejects reserved directories, subtrees, and symlink escapes
       symlinkSync(join(dir, 'lib'), join(dir, 'link-lib'), dirLinkType);
       assert.throws(
         () => validateOutDir(dir, 'link-lib'),
+        /resolves inside reserved directory/
+      );
+      assert.throws(
+        () => validateOutDir(dir, 'link-lib/nonexistent-sub'),
+        /resolves inside reserved directory/
+      );
+      assert.throws(
+        () => validateOutDir(dir, 'link-lib/nested/deep'),
+        /resolves inside reserved directory/
+      );
+
+      symlinkSync(join(dir, 'scripts'), join(dir, 'link-scripts'), dirLinkType);
+      assert.throws(
+        () => validateOutDir(dir, 'link-scripts/nonexistent-sub'),
         /resolves inside reserved directory/
       );
 
