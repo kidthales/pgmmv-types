@@ -439,12 +439,12 @@ export function auditDependabotConfig(dependabotRaw, violations = []) {
   }
 
   for (const ecosystem of REQUIRED_DEPENDABOT_ECOSYSTEMS) {
-    const entry = byEcosystem.get(ecosystem);
-    if (!entry) {
+    if (!byEcosystem.has(ecosystem)) {
       violations.push(`.github/dependabot.yml missing required package-ecosystem '${ecosystem}'`);
-      continue;
     }
+  }
 
+  for (const [ecosystem, entry] of byEcosystem.entries()) {
     const interval = entry.schedule && typeof entry.schedule === 'object' ? entry.schedule.interval : undefined;
     if (interval !== 'quarterly') {
       violations.push(
@@ -459,6 +459,7 @@ export function auditDependabotConfig(dependabotRaw, violations = []) {
         typeof rule === 'object' &&
         !Array.isArray(rule) &&
         rule['dependency-name'] === '*' &&
+        rule.versions === undefined &&
         Array.isArray(rule['update-types']) &&
         rule['update-types'].includes('version-update:semver-major'),
     );

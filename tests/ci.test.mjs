@@ -1127,6 +1127,29 @@ test('auditDependabotConfig enforces quarterly cold-storage cadence and semver-m
     ),
   );
 
+  // Wildcard ignore rule narrowed by a versions filter must be rejected
+  const versionFilteredIgnoreNpm = compliant.replace(
+    "    ignore:\n      - dependency-name: '*'\n        update-types:\n          - version-update:semver-major\n    groups:\n      dependencies:",
+    "    ignore:\n      - dependency-name: '*'\n        versions:\n          - '>= 1.0.0'\n        update-types:\n          - version-update:semver-major\n    groups:\n      dependencies:",
+  );
+  assert.ok(
+    auditDependabotConfig(versionFilteredIgnoreNpm).some((v) =>
+      v.includes("ecosystem 'npm' must ignore dependency-name '*' update-types 'version-update:semver-major'"),
+    ),
+  );
+
+  // Additional ecosystems beyond REQUIRED_DEPENDABOT_ECOSYSTEMS must also enforce quarterly + semver-major ignore
+  const extraNonQuarterlyEcosystem = `${compliant}  - package-ecosystem: docker\n    directory: /\n    schedule:\n      interval: weekly\n`;
+  const extraViolations = auditDependabotConfig(extraNonQuarterlyEcosystem);
+  assert.ok(
+    extraViolations.some((v) => v.includes("ecosystem 'docker' schedule.interval must be 'quarterly'")),
+  );
+  assert.ok(
+    extraViolations.some((v) =>
+      v.includes("ecosystem 'docker' must ignore dependency-name '*' update-types 'version-update:semver-major'"),
+    ),
+  );
+
   // Missing required ecosystem
   const onlyNpm = compliant.split('\n  - package-ecosystem: github-actions')[0] + '\n';
   assert.ok(
@@ -1271,6 +1294,35 @@ test('path-jail: non-existent child targets beneath intra-repo symlinks/junction
     }
   } finally {
     rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('path-jail: protected dirs symlinked to sibling inside broader allowedRoot are still rejected', () => {
+  const outerRoot = mkdtempSync(join(tmpdir(), 'pgmmv_jail_broader_'));
+  try {
+    const repoDir = join(outerRoot, 'repo');
+    const siblingTarget = join(outerRoot, 'shared-node-modules');
+    mkdirSync(repoDir, { recursive: true });
+    mkdirSync(siblingTarget, { recursive: true });
+
+    const dirLinkType = process.platform === 'win32' ? 'junction' : 'dir';
+    symlinkSync(siblingTarget, join(repoDir, 'node_modules'), dirLinkType);
+
+    for (const candidate of ['node_modules', 'node_modules/sub', join(siblingTarget, 'sub')]) {
+      assert.throws(
+        () => resolveOutDir({ rootDir: repoDir, outDir: candidate, allowedRoot: outerRoot }),
+        /refusing to write to protected path/,
+        `Expected resolveOutDir to reject "${candidate}" under broader allowedRoot`,
+      );
+    }
+
+    const safeSibling = join(outerRoot, 'safe-dist');
+    assert.equal(
+      resolveOutDir({ rootDir: repoDir, outDir: safeSibling, allowedRoot: outerRoot }),
+      resolveRealPath(safeSibling),
+    );
+  } finally {
+    rmSync(outerRoot, { recursive: true, force: true });
   }
 });
 

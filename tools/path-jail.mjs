@@ -172,13 +172,11 @@ export function resolveOutDir(opts = {}) {
     protectedRoots.push(effectiveRoot);
   }
   for (const baseRoot of protectedRoots) {
-    if (isSameOrSubpath(resolved, baseRoot)) {
-      if (
-        isSameOrSubpath(baseRoot, resolved) ||
-        PROTECTED_INTERNAL_DIRS.some((dir) => isSameOrSubpath(resolved, join(baseRoot, dir)))
-      ) {
-        throw new Error(`Invalid outDir: refusing to write to protected path ${resolved}`);
-      }
+    if (
+      isSameOrSubpath(baseRoot, resolved) ||
+      PROTECTED_INTERNAL_DIRS.some((dir) => isSameOrSubpath(resolved, join(baseRoot, dir)))
+    ) {
+      throw new Error(`Invalid outDir: refusing to write to protected path ${resolved}`);
     }
   }
 

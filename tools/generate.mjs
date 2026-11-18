@@ -19,7 +19,7 @@ import {
 } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { isSameOrSubpath, PROTECTED_INTERNAL_DIRS, resolveRealPath } from './path-jail.mjs';
+import { isDirectCli, isSameOrSubpath, PROTECTED_INTERNAL_DIRS, resolveRealPath } from './path-jail.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const STATEMENT_RESET_KEYWORDS = new Set([
@@ -643,17 +643,6 @@ export function generateDeclarations(options = {}) {
     };
   } finally {
     rmSync(stagingDir, { recursive: true, force: true });
-  }
-}
-
-function isDirectCli(metaUrl) {
-  if (!process.argv[1]) {
-    return false;
-  }
-  try {
-    return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(metaUrl));
-  } catch {
-    return resolve(process.argv[1]) === fileURLToPath(metaUrl);
   }
 }
 
