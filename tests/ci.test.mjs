@@ -1428,22 +1428,33 @@ test('auditWorkflows enforces Gate 0 AST invariants (permissions types, attest s
     });
   }
 
-  {
+  for (const [label, badAttachPerms] of [
+    ['omitted contents (N - 1)', '      attestations: write\n      id-token: write\n'],
+    ['omitted attestations (N - 1)', '      contents: write\n      id-token: write\n'],
+    ['omitted id-token (N - 1)', '      contents: write\n      attestations: write\n'],
+    ['downgraded contents: read (N = 3)', '      contents: read\n      attestations: write\n      id-token: write\n'],
+    ['downgraded attestations: read (N = 3)', '      contents: write\n      attestations: read\n      id-token: write\n'],
+    ['downgraded id-token: read (N = 3)', '      contents: write\n      attestations: write\n      id-token: read\n'],
+    [
+      'extra issues: read (N + 1)',
+      '      contents: write\n      attestations: write\n      id-token: write\n      issues: read\n',
+    ],
+  ]) {
     const mutated = baseRelease.replace(
       '  attach-assets:\n    needs: [tag-guard, verify]\n    runs-on: ubuntu-latest\n    timeout-minutes: 15\n    permissions:\n      contents: write\n      attestations: write\n      id-token: write\n',
-      '  attach-assets:\n    needs: [tag-guard, verify]\n    runs-on: ubuntu-latest\n    timeout-minutes: 15\n    permissions:\n      contents: write\n      attestations: write\n      id-token: write\n      issues: read\n',
+      `  attach-assets:\n    needs: [tag-guard, verify]\n    runs-on: ubuntu-latest\n    timeout-minutes: 15\n    permissions:\n${badAttachPerms}`,
     );
-    assert.notEqual(mutated, baseRelease, 'Expected attach-assets permissions fixture mutation to apply');
+    assert.notEqual(mutated, baseRelease, `Expected attach-assets permissions fixture mutation (${label}) to apply`);
     withTempGithubFixture({ '.github/workflows/release.yml': mutated }, (dir) => {
       const res = auditWorkflows(dir);
-      assert.equal(res.ok, false);
+      assert.equal(res.ok, false, `Expected auditWorkflows to reject ${label}`);
       assert.ok(
         res.violations.some((v) =>
           v.includes(
             'attach-assets job must declare exact permissions { contents: write, attestations: write, id-token: write }',
           ),
         ),
-        `Expected attach-assets exact permissions violation, got: ${res.violations.join('; ')}`,
+        `Expected attach-assets exact permissions violation for ${label}, got: ${res.violations.join('; ')}`,
       );
     });
   }
