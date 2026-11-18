@@ -2,8 +2,10 @@
 
 [![CI](https://github.com/kidthales/pgmmv-types/actions/workflows/ci.yml/badge.svg)](https://github.com/kidthales/pgmmv-types/actions/workflows/ci.yml)
 [![npm version](https://img.shields.io/npm/v/@kidthales/pgmmv-types.svg)](https://www.npmjs.com/package/@kidthales/pgmmv-types)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Node.js >= 22.2](https://img.shields.io/badge/node-%3E%3D22.2.0-brightgreen.svg)](./package.json)
+[![GitHub Release](https://img.shields.io/github/v/release/kidthales/pgmmv-types.svg)](https://github.com/kidthales/pgmmv-types/releases)
+[![TypeScript](https://img.shields.io/npm/types/@kidthales/pgmmv-types.svg)](https://www.typescriptlang.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/kidthales/pgmmv-types/blob/main/LICENSE)
+[![Node.js >= 22.2](https://img.shields.io/badge/node-%3E%3D22.2.0-brightgreen.svg)](https://github.com/kidthales/pgmmv-types/blob/main/package.json)
 
 Type-only TypeScript declaration package (`0` runtime JavaScript) for [Pixel Game Maker MV (PGMMV)](https://rpgmakerofficial.com/product/act/en/manual/01_01.html), covering the `Agtk`, `cc` (Cocos2d-JS), and `jsb` APIs.
 
@@ -172,7 +174,7 @@ npm run ci:local     # Run the full local Gate 0-4 CI suite via pwsh ./scripts/c
 
 ## References & License
 
-- [Changelog](./CHANGELOG.md)
+- [Changelog](https://github.com/kidthales/pgmmv-types/blob/main/CHANGELOG.md)
 - [Plug-in Specifications & Information](https://rpgmakerofficial.com/product/act/en/manual/Plug-in_Spec_en.pdf)
 - [Cocos2d API Reference](https://docs.cocos2d-x.org/api-ref/js/v3x/index.html)
-- [MIT License](./LICENSE)
+- [MIT License](https://github.com/kidthales/pgmmv-types/blob/main/LICENSE)
